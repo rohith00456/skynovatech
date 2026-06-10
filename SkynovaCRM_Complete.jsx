@@ -424,6 +424,8 @@ const Sidebar = ({ currentRoute, setRoute }) => {
     { id: 'stipends', label: 'Stipends', icon: DollarSign },
     { id: 'activities', label: 'Activities', icon: Activity },
     { id: 'projects', label: 'Projects', icon: Briefcase },
+    { id: 'interns', label: 'Internships', icon: Users },
+    { id: 'intern_tasks', label: 'Intern Tasks', icon: CheckSquare },
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'tickets', label: 'Support Tickets', icon: CheckSquare },
     { id: 'whatsapp', label: 'WhatsApp', icon: Phone },
@@ -2677,6 +2679,721 @@ const SettingsPage = () => {
   );
 };
 
+
+// --- INTERN MANAGEMENT MODULES ---
+
+const hashPassword = async (password) => {
+  const msgBuffer = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+const generateRandomPassword = () => {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let pass = '';
+  pass += 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)];
+  pass += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 26)];
+  pass += '0123456789'[Math.floor(Math.random() * 10)];
+  pass += '!@#$%^&*'[(Math.floor(Math.random() * 8))];
+  for (let i = 0; i < 8; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+  return pass.split('').sort(() => 0.5 - Math.random()).join('');
+};
+
+const InternsManagement = () => {
+  const [activeTab, setActiveTab] = useState('Accounts');
+  
+  // Applications
+  const [applications, setApplications] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+  
+  // Accounts
+  const [interns, setInterns] = useState([]);
+  const [loadingInterns, setLoadingInterns] = useState(true);
+  const [isAccountModalOpen, setAccountModalOpen] = useState(false);
+  const [editingIntern, setEditingIntern] = useState(null);
+  const [prefilledApp, setPrefilledApp] = useState(null);
+
+  const fetchApplications = async () => {
+    setLoadingApps(true);
+    const { data } = await supabase.from('intern_applications').select('*').order('created_at', { ascending: false });
+    setApplications(data || []);
+    setLoadingApps(false);
+  };
+
+  const fetchInterns = async () => {
+    setLoadingInterns(true);
+    const { data } = await supabase.from('interns').select('*').order('created_at', { ascending: false });
+    setInterns(data || []);
+    setLoadingInterns(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'Applications') fetchApplications();
+    else fetchInterns();
+  }, [activeTab]);
+
+  const updateAppStatus = async (id, status) => {
+    await supabase.from('intern_applications').update({ status }).eq('id', id);
+    fetchApplications();
+    showToast(`Application ${status}`);
+  };
+
+  const handleApprove = (app) => {
+    setPrefilledApp(app);
+    setActiveTab('Accounts');
+    setAccountModalOpen(true);
+  };
+
+  const updateInternStatus = async (id, status) => {
+    await supabase.from('interns').update({ status }).eq('id', id);
+    fetchInterns();
+    showToast(`Intern marked as ${status}`);
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Active': return 'bg-green-100 text-green-800';
+      case 'Expired': return 'bg-red-100 text-red-800';
+      case 'Suspended': return 'bg-orange-100 text-orange-800';
+      case 'Completed': return 'bg-blue-100 text-blue-800';
+      case 'Pending': return 'bg-yellow-100 text-yellow-800';
+      case 'Approved': return 'bg-green-100 text-green-800';
+      case 'Rejected': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Internships Management</h2>
+        <button onClick={() => { setEditingIntern(null); setPrefilledApp(null); setAccountModalOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          <Plus size={16} /> Create Intern Account
+        </button>
+      </div>
+
+      <div className="flex border-b mb-6">
+        {['Accounts', 'Applications'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        {activeTab === 'Applications' && (
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-gray-600">Applicant Name</th>
+                  <th className="p-4 font-medium text-gray-600">Email</th>
+                  <th className="p-4 font-medium text-gray-600">Phone</th>
+                  <th className="p-4 font-medium text-gray-600">Resume URL</th>
+                  <th className="p-4 font-medium text-gray-600">Status</th>
+                  <th className="p-4 font-medium text-gray-600 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingApps ? <tr><td colSpan="6" className="text-center p-8"><Spinner /></td></tr> :
+                 applications.map(app => (
+                   <tr key={app.id} className="border-b hover:bg-gray-50">
+                     <td className="p-4 font-medium">{app.name}</td>
+                     <td className="p-4">{app.email}</td>
+                     <td className="p-4">{app.phone}</td>
+                     <td className="p-4"><a href={app.resume_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">View Resume</a></td>
+                     <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(app.status)}`}>{app.status}</span></td>
+                     <td className="p-4 text-right flex justify-end gap-2">
+                       {app.status === 'Pending' && (
+                         <>
+                           <button onClick={() => updateAppStatus(app.id, 'Rejected')} className="px-3 py-1 bg-red-50 text-red-600 rounded text-sm hover:bg-red-100">Reject</button>
+                           <button onClick={() => handleApprove(app)} className="px-3 py-1 bg-green-50 text-green-600 rounded text-sm hover:bg-green-100">Approve & Create</button>
+                         </>
+                       )}
+                     </td>
+                   </tr>
+                 ))
+                }
+                {applications.length === 0 && !loadingApps && <tr><td colSpan="6" className="text-center p-8 text-gray-500">No applications found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'Accounts' && (
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-gray-600">User ID</th>
+                  <th className="p-4 font-medium text-gray-600">Name</th>
+                  <th className="p-4 font-medium text-gray-600">Email</th>
+                  <th className="p-4 font-medium text-gray-600">Status</th>
+                  <th className="p-4 font-medium text-gray-600">Expiry Date</th>
+                  <th className="p-4 font-medium text-gray-600 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingInterns ? <tr><td colSpan="6" className="text-center p-8"><Spinner /></td></tr> :
+                 interns.map(i => {
+                   const isExpired = i.expiry_date && new Date(i.expiry_date) < new Date();
+                   const displayStatus = isExpired && i.status === 'Active' ? 'Expired' : i.status;
+                   return (
+                     <tr key={i.id} className="border-b hover:bg-gray-50">
+                       <td className="p-4 font-bold text-gray-800">{i.intern_id}</td>
+                       <td className="p-4 font-medium">{i.name}</td>
+                       <td className="p-4">{i.email}</td>
+                       <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(displayStatus)}`}>{displayStatus}</span></td>
+                       <td className="p-4 text-sm">
+                         {i.expiry_date ? new Date(i.expiry_date).toLocaleString() : 'Never'}
+                         {isExpired && displayStatus !== 'Completed' && <span className="block text-xs text-red-500">Access Denied</span>}
+                       </td>
+                       <td className="p-4 text-right">
+                         <div className="flex justify-end gap-2">
+                           <button onClick={() => { setEditingIntern(i); setPrefilledApp(null); setAccountModalOpen(true); }} className="text-blue-600 hover:underline text-sm font-medium">Edit / Renew</button>
+                           {displayStatus === 'Active' && <button onClick={() => updateInternStatus(i.id, 'Suspended')} className="text-orange-600 hover:underline text-sm font-medium">Suspend</button>}
+                           {displayStatus === 'Suspended' && <button onClick={() => updateInternStatus(i.id, 'Active')} className="text-green-600 hover:underline text-sm font-medium">Reactivate</button>}
+                         </div>
+                       </td>
+                     </tr>
+                   );
+                 })
+                }
+                {interns.length === 0 && !loadingInterns && <tr><td colSpan="6" className="text-center p-8 text-gray-500">No intern accounts found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {isAccountModalOpen && (
+        <CreateInternModal 
+          onClose={() => { setAccountModalOpen(false); setPrefilledApp(null); setEditingIntern(null); fetchInterns(); }} 
+          prefilled={prefilledApp} 
+          existing={editingIntern} 
+        />
+      )}
+    </div>
+  );
+};
+
+const CreateInternModal = ({ onClose, prefilled, existing }) => {
+  const [internId, setInternId] = useState('');
+  const [password, setPassword] = useState('');
+  const [expiryType, setExpiryType] = useState('30');
+  const [customExpiry, setCustomExpiry] = useState('');
+  
+  useEffect(() => {
+    if (existing) {
+      setInternId(existing.intern_id);
+    } else {
+      // Fetch latest ID to auto suggest
+      supabase.from('interns').select('intern_id').order('intern_id', { ascending: false }).limit(1)
+        .then(({data}) => {
+          if (data && data.length > 0 && data[0].intern_id.startsWith('INT')) {
+            const num = parseInt(data[0].intern_id.replace('INT', ''), 10);
+            if (!isNaN(num)) {
+              setInternId(`INT${String(num + 1).padStart(3, '0')}`);
+            } else {
+              setInternId('INT001');
+            }
+          } else {
+            setInternId('INT001');
+          }
+        });
+      setPassword(generateRandomPassword());
+    }
+  }, [existing]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    
+    let expiryDate = null;
+    if (expiryType !== 'never') {
+      if (expiryType === 'custom') {
+        expiryDate = new Date(customExpiry).toISOString();
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() + parseInt(expiryType, 10));
+        expiryDate = d.toISOString();
+      }
+    }
+
+    const payload = {
+      intern_id: fd.get('intern_id'),
+      name: fd.get('name'),
+      email: fd.get('email'),
+      phone: fd.get('phone'),
+      status: fd.get('status'),
+      expiry_date: expiryDate
+    };
+
+    if (password) {
+      payload.password_hash = await hashPassword(password);
+    }
+
+    if (existing) {
+      const { error } = await supabase.from('interns').update(payload).eq('id', existing.id);
+      if (error) { showToast(error.message, 'error'); return; }
+      logActivity(null, 'Updated Intern', 'interns', existing.id, payload.intern_id);
+      showToast('Intern account updated');
+    } else {
+      // Check duplicate
+      const { data: dupCheck } = await supabase.from('interns').select('id').eq('intern_id', payload.intern_id);
+      if (dupCheck && dupCheck.length > 0) {
+        showToast('Error: User ID already exists.', 'error');
+        return;
+      }
+      
+      const { data, error } = await supabase.from('interns').insert([payload]).select().single();
+      if (error) { showToast(error.message, 'error'); return; }
+      
+      if (prefilled) {
+        await supabase.from('intern_applications').update({ status: 'Approved' }).eq('id', prefilled.id);
+      }
+      
+      logActivity(null, 'Created Intern', 'interns', data.id, payload.intern_id);
+      showToast('Intern account created successfully');
+    }
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={existing ? "Edit Intern Account" : "Create Intern Account"} maxWidth="max-w-xl">
+      <form onSubmit={handleSave} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm mb-1">User ID *</label><input name="intern_id" required value={internId} onChange={e => setInternId(e.target.value)} className="w-full border p-2 rounded text-sm bg-blue-50 font-bold" /></div>
+          <div><label className="block text-sm mb-1">Full Name *</label><input name="name" required defaultValue={existing?.name || prefilled?.name} className="w-full border p-2 rounded text-sm" /></div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm mb-1">Email</label><input type="email" name="email" defaultValue={existing?.email || prefilled?.email} className="w-full border p-2 rounded text-sm" /></div>
+          <div><label className="block text-sm mb-1">Phone</label><input name="phone" defaultValue={existing?.phone || prefilled?.phone} className="w-full border p-2 rounded text-sm" /></div>
+        </div>
+
+        <div className="bg-gray-50 p-4 rounded-lg border space-y-3">
+          <div className="flex justify-between items-center">
+            <label className="block text-sm font-medium">Password {existing && "(Leave blank to keep current)"}</label>
+            <button type="button" onClick={() => setPassword(generateRandomPassword())} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium hover:bg-blue-200">
+              Generate Random
+            </button>
+          </div>
+          <input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder={existing ? "Enter new password to change" : "Password"} required={!existing} className="w-full border p-2 rounded text-sm font-mono" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Account Expiry</label>
+            <select value={expiryType} onChange={e => setExpiryType(e.target.value)} className="w-full border p-2 rounded text-sm">
+              <option value="7">7 Days</option>
+              <option value="15">15 Days</option>
+              <option value="30">30 Days</option>
+              <option value="60">60 Days</option>
+              <option value="never">Never Expire</option>
+              <option value="custom">Custom Date & Time</option>
+            </select>
+            {existing && existing.expiry_date && (
+              <p className="text-xs text-gray-500 mt-1">Current: {new Date(existing.expiry_date).toLocaleString()}</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Status</label>
+            <select name="status" defaultValue={existing?.status || 'Active'} className="w-full border p-2 rounded text-sm">
+              {['Active', 'Suspended', 'Completed'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        
+        {expiryType === 'custom' && (
+          <div><label className="block text-sm mb-1">Custom Expiry Date</label><input type="datetime-local" value={customExpiry} onChange={e => setCustomExpiry(e.target.value)} required className="w-full border p-2 rounded text-sm" /></div>
+        )}
+
+        <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded font-medium">Save Account</button>
+      </form>
+    </Modal>
+  );
+};
+
+const InternTasksAdmin = () => {
+  const [tasks, setTasks] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  
+  const [activeTab, setActiveTab] = useState('Tasks');
+
+  const fetchTasks = async () => {
+    const { data } = await supabase.from('intern_tasks').select('*').order('created_at', { ascending: false });
+    setTasks(data || []);
+  };
+
+  const fetchSubmissions = async () => {
+    const { data } = await supabase.from('intern_submissions').select('*, interns(name, intern_id), intern_tasks(title)').order('submitted_at', { ascending: false });
+    setSubmissions(data || []);
+  };
+
+  const fetchAnnouncements = async () => {
+    const { data } = await supabase.from('intern_announcements').select('*').order('created_at', { ascending: false });
+    setAnnouncements(data || []);
+  };
+
+  useEffect(() => {
+    fetchTasks();
+    fetchSubmissions();
+    fetchAnnouncements();
+  }, []);
+
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const task = {
+      title: fd.get('title'),
+      description: fd.get('description'),
+      deadline: fd.get('deadline') || null,
+      document_url: fd.get('document_url')
+    };
+    await supabase.from('intern_tasks').insert([task]);
+    e.target.reset();
+    showToast('Task assigned to interns');
+    fetchTasks();
+  };
+
+  const handleCreateAnnouncement = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await supabase.from('intern_announcements').insert([{ title: fd.get('title'), content: fd.get('content') }]);
+    e.target.reset();
+    showToast('Announcement posted');
+    fetchAnnouncements();
+  };
+
+  const updateSubmissionStatus = async (id, status) => {
+    await supabase.from('intern_submissions').update({ status }).eq('id', id);
+    fetchSubmissions();
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <h2 className="text-2xl font-bold mb-6">Intern Tasks & Monitoring</h2>
+
+      <div className="flex border-b mb-6">
+        {['Tasks', 'Submissions', 'Announcements'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'Tasks' && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-1 bg-white p-4 rounded-xl shadow-sm border h-fit">
+              <h3 className="font-bold mb-4">Create New Task</h3>
+              <form onSubmit={handleCreateTask} className="space-y-4">
+                <div><label className="block text-sm mb-1">Title *</label><input name="title" required className="w-full border p-2 rounded text-sm" /></div>
+                <div><label className="block text-sm mb-1">Deadline</label><input type="datetime-local" name="deadline" className="w-full border p-2 rounded text-sm" /></div>
+                <div><label className="block text-sm mb-1">Resource / Document URL</label><input name="document_url" type="url" className="w-full border p-2 rounded text-sm" /></div>
+                <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="3" className="w-full border p-2 rounded text-sm"></textarea></div>
+                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium">Assign Task</button>
+              </form>
+            </div>
+            <div className="md:col-span-2 space-y-4">
+              {tasks.map(t => (
+                <div key={t.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex justify-between">
+                    <h4 className="font-bold text-gray-900">{t.title}</h4>
+                    <span className="text-sm text-gray-500">Deadline: {t.deadline ? new Date(t.deadline).toLocaleString() : 'No deadline'}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">{t.description}</p>
+                  {t.document_url && <a href={t.document_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline mt-2 inline-block">View Resource Document</a>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Submissions' && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="p-4 font-medium text-gray-600">Intern</th>
+                  <th className="p-4 font-medium text-gray-600">Task</th>
+                  <th className="p-4 font-medium text-gray-600">Submission URL</th>
+                  <th className="p-4 font-medium text-gray-600">Status</th>
+                  <th className="p-4 font-medium text-gray-600">Time</th>
+                  <th className="p-4 font-medium text-gray-600 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {submissions.map(s => (
+                  <tr key={s.id} className="border-b hover:bg-gray-50">
+                    <td className="p-4"><span className="font-medium">{s.interns?.name}</span> <span className="text-xs text-gray-500">({s.interns?.intern_id})</span></td>
+                    <td className="p-4 text-sm">{s.intern_tasks?.title}</td>
+                    <td className="p-4"><a href={s.submission_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm truncate block w-48">{s.submission_url}</a></td>
+                    <td className="p-4"><span className={`px-2 py-1 rounded text-xs font-medium ${s.status==='Reviewed' ? 'bg-green-100 text-green-700' : s.status==='Needs Revision' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{s.status}</span></td>
+                    <td className="p-4 text-xs text-gray-500">{new Date(s.submitted_at).toLocaleString()}</td>
+                    <td className="p-4 text-right flex justify-end gap-2">
+                      <button onClick={() => updateSubmissionStatus(s.id, 'Reviewed')} className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded">Mark Reviewed</button>
+                      <button onClick={() => updateSubmissionStatus(s.id, 'Needs Revision')} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded">Needs Revision</button>
+                    </td>
+                  </tr>
+                ))}
+                {submissions.length === 0 && <tr><td colSpan="6" className="text-center p-8 text-gray-500">No submissions found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'Announcements' && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-1 bg-white p-4 rounded-xl shadow-sm border h-fit">
+              <h3 className="font-bold mb-4">Post Announcement</h3>
+              <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+                <div><label className="block text-sm mb-1">Title *</label><input name="title" required className="w-full border p-2 rounded text-sm" /></div>
+                <div><label className="block text-sm mb-1">Content *</label><textarea name="content" required rows="4" className="w-full border p-2 rounded text-sm"></textarea></div>
+                <button type="submit" className="w-full py-2 bg-purple-600 text-white rounded text-sm font-medium">Post to Interns</button>
+              </form>
+            </div>
+            <div className="md:col-span-2 space-y-4">
+              {announcements.map(a => (
+                <div key={a.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-bold text-purple-900 flex items-center gap-2"><Bell size={16}/> {a.title}</h4>
+                    <span className="text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{a.content}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const InternPortal = ({ internSession, setInternSession }) => {
+  const [activeTab, setActiveTab] = useState('Dashboard');
+  const [tasks, setTasks] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [submissions, setSubmissions] = useState([]);
+  const [internDetails, setInternDetails] = useState(internSession);
+
+  // Remaining days calculation
+  const getRemainingDays = () => {
+    if (!internDetails.expiry_date) return 'Never Expires';
+    const now = new Date();
+    const expiry = new Date(internDetails.expiry_date);
+    if (expiry < now) return 'Expired';
+    const diffTime = Math.abs(expiry - now);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return `${diffDays} Days`;
+  };
+
+  const fetchPortalData = async () => {
+    // Refresh intern details
+    const { data: iData } = await supabase.from('interns').select('*').eq('id', internSession.id).single();
+    if (iData) setInternDetails(iData);
+
+    const { data: tData } = await supabase.from('intern_tasks').select('*').order('deadline', { ascending: true });
+    setTasks(tData || []);
+    
+    const { data: aData } = await supabase.from('intern_announcements').select('*').order('created_at', { ascending: false });
+    setAnnouncements(aData || []);
+    
+    const { data: sData } = await supabase.from('intern_submissions').select('*').eq('intern_id', internSession.id);
+    setSubmissions(sData || []);
+  };
+
+  useEffect(() => { fetchPortalData(); }, []);
+
+  const handleSubmission = async (e, taskId) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      intern_id: internSession.id,
+      task_id: taskId,
+      submission_url: fd.get('submission_url'),
+      notes: fd.get('notes'),
+      status: 'Submitted'
+    };
+    
+    // Check if already submitted, then update, else insert
+    const existing = submissions.find(s => s.task_id === taskId);
+    if (existing) {
+      await supabase.from('intern_submissions').update(payload).eq('id', existing.id);
+    } else {
+      await supabase.from('intern_submissions').insert([payload]);
+    }
+    showToast('Task submitted successfully');
+    fetchPortalData();
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const np = fd.get('new_password');
+    const cp = fd.get('confirm_password');
+    if (np !== cp) { showToast('Passwords do not match', 'error'); return; }
+    const hashed = await hashPassword(np);
+    await supabase.from('interns').update({ password_hash: hashed }).eq('id', internSession.id);
+    showToast('Password updated securely');
+    e.target.reset();
+  };
+
+  return (
+    <div className="flex h-screen bg-gray-50 font-sans text-gray-800">
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-900 text-white flex flex-col transition-all">
+        <div className="p-4 py-6 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold">I</div>
+          <span className="font-bold text-xl tracking-tight">Intern Portal</span>
+        </div>
+        <div className="px-4 py-3 bg-slate-800 border-l-4 border-blue-500">
+          <p className="text-sm font-medium text-slate-300">{internDetails.name}</p>
+          <p className="text-xs text-slate-400 font-mono">{internDetails.intern_id}</p>
+        </div>
+        <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
+          {['Dashboard', 'Tasks & Submissions', 'Announcements', 'Settings'].map(tab => {
+            const icons = { 'Dashboard': <Home size={18}/>, 'Tasks & Submissions': <CheckSquare size={18}/>, 'Announcements': <Bell size={18}/>, 'Settings': <Settings size={18}/> };
+            return (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}>
+                {icons[tab]} {tab}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t border-slate-800">
+          <button onClick={() => setInternSession(null)} className="w-full flex items-center gap-2 px-3 py-2 rounded text-red-400 hover:bg-slate-800 transition-colors text-sm font-medium">
+            <LogOut size={16} /> Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-white border-b border-gray-100 px-8 py-4 flex justify-between items-center shrink-0">
+          <h1 className="text-xl font-bold text-gray-800">{activeTab}</h1>
+          <div className="flex items-center gap-4 text-sm">
+            <span className={`px-2 py-1 rounded-full font-medium ${internDetails.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              Status: {internDetails.status}
+            </span>
+            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-medium border border-blue-100">
+              <Clock size={14} className="inline mr-1 -mt-0.5" /> Time Left: {getRemainingDays()}
+            </span>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-8">
+          {activeTab === 'Dashboard' && (
+            <div className="max-w-4xl space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <h3 className="text-gray-500 font-medium mb-1">Assigned Tasks</h3>
+                  <p className="text-4xl font-bold">{tasks.length}</p>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <h3 className="text-gray-500 font-medium mb-1">Submitted Tasks</h3>
+                  <p className="text-4xl font-bold text-blue-600">{submissions.length}</p>
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h3 className="font-bold mb-4 text-lg border-b pb-2">Account Overview</h3>
+                <div className="grid grid-cols-2 gap-y-4 text-sm">
+                  <div><span className="text-gray-500 block">User ID</span><span className="font-mono font-medium">{internDetails.intern_id}</span></div>
+                  <div><span className="text-gray-500 block">Name</span><span className="font-medium">{internDetails.name}</span></div>
+                  <div><span className="text-gray-500 block">Email</span><span className="font-medium">{internDetails.email || 'N/A'}</span></div>
+                  <div><span className="text-gray-500 block">Phone</span><span className="font-medium">{internDetails.phone || 'N/A'}</span></div>
+                  <div><span className="text-gray-500 block">Expiry Date</span><span className="font-medium text-red-600">{internDetails.expiry_date ? new Date(internDetails.expiry_date).toLocaleString() : 'Never'}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Tasks & Submissions' && (
+            <div className="space-y-6 max-w-4xl">
+              {tasks.length === 0 && <p className="text-gray-500 bg-white p-6 rounded-xl border text-center">No tasks assigned yet.</p>}
+              {tasks.map(t => {
+                const sub = submissions.find(s => s.task_id === t.id);
+                return (
+                  <div key={t.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-bold text-lg text-gray-900">{t.title}</h3>
+                      {sub ? (
+                        <span className={`px-2 py-1 text-xs font-medium rounded ${sub.status === 'Reviewed' ? 'bg-green-100 text-green-700' : sub.status === 'Needs Revision' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {sub.status}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs font-medium rounded bg-orange-100 text-orange-700">Pending</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4 whitespace-pre-wrap">{t.description}</p>
+                    <div className="flex gap-4 text-sm text-gray-500 mb-6">
+                      {t.deadline && <span><Clock size={14} className="inline mr-1"/> Due: {new Date(t.deadline).toLocaleString()}</span>}
+                      {t.document_url && <a href={t.document_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline"><FileText size={14} className="inline mr-1"/> Resource Document</a>}
+                    </div>
+
+                    <form onSubmit={(e) => handleSubmission(e, t.id)} className="bg-gray-50 p-4 rounded-lg border">
+                      <h4 className="font-semibold text-sm mb-3">{sub ? 'Update Submission' : 'Submit Work'}</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium mb-1 text-gray-600">Document / Drive URL *</label>
+                          <input name="submission_url" required type="url" defaultValue={sub?.submission_url} className="w-full border p-2 rounded text-sm bg-white" placeholder="https://docs.google.com/..." />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1 text-gray-600">Notes to Admin</label>
+                          <textarea name="notes" defaultValue={sub?.notes} rows="2" className="w-full border p-2 rounded text-sm bg-white"></textarea>
+                        </div>
+                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
+                          {sub ? 'Update Submission' : 'Submit Task'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeTab === 'Announcements' && (
+            <div className="max-w-4xl space-y-4">
+              {announcements.length === 0 && <p className="text-gray-500 bg-white p-6 rounded-xl border text-center">No announcements yet.</p>}
+              {announcements.map(a => (
+                <div key={a.id} className="bg-white p-6 rounded-xl shadow-sm border border-l-4 border-l-purple-500">
+                  <h3 className="font-bold text-lg mb-1">{a.title}</h3>
+                  <p className="text-xs text-gray-400 mb-3">{new Date(a.created_at).toLocaleString()}</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{a.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'Settings' && (
+            <div className="max-w-xl bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="font-bold mb-4 text-lg border-b pb-2">Change Password</h3>
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">New Password</label>
+                  <input type="password" name="new_password" required minLength="6" className="w-full border p-2 rounded text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Confirm New Password</label>
+                  <input type="password" name="confirm_password" required minLength="6" className="w-full border p-2 rounded text-sm" />
+                </div>
+                <button type="submit" className="w-full py-2 bg-slate-900 text-white rounded text-sm font-medium hover:bg-slate-800">
+                  Update Password
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+};
+
 // --- APP COMPONENT ---
 
 export default function SkynovaCRM() {
@@ -2687,6 +3404,7 @@ export default function SkynovaCRM() {
   const [recentNotifications, setRecentNotifications] = useState([]);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [internSession, setInternSession] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -2699,6 +3417,11 @@ export default function SkynovaCRM() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (internSession) localStorage.setItem('intern_session', JSON.stringify(internSession));
+    else localStorage.removeItem('intern_session');
+  }, [internSession]);
 
   const checkAdmin = async (session) => {
     if (session) {
@@ -2757,6 +3480,8 @@ export default function SkynovaCRM() {
       case 'quotations': return <Quotations />;
       case 'stipends': return <Stipends />;
       case 'projects': return <Projects />;
+      case 'interns': return <InternsManagement />;
+      case 'intern_tasks': return <InternTasksAdmin />;
       case 'invoices': return <Invoices />;
       case 'tickets': return <SupportTickets />;
       case 'whatsapp': return <WhatsAppCenter />;
@@ -2775,28 +3500,77 @@ export default function SkynovaCRM() {
 
   if (authLoading) return <div className="flex h-screen items-center justify-center bg-[#f1f5f9]"><Spinner size={40} /></div>;
 
-  if (!session) {
+  const handleInternLogin = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const id = fd.get('intern_id');
+    const pwd = fd.get('password');
+    
+    setAuthLoading(true);
+    const { data: intern, error } = await supabase.from('interns').select('*').eq('intern_id', id).single();
+    
+    if (error || !intern) {
+      alert('Invalid User ID or password.');
+    } else if (intern.status === 'Expired' || (intern.expiry_date && new Date(intern.expiry_date) < new Date())) {
+      alert('Your internship access has expired. Please contact the administrator.');
+    } else if (intern.status === 'Suspended') {
+      alert('Your account is suspended. Please contact the administrator.');
+    } else {
+      const hashed = await hashPassword(pwd);
+      if (intern.password_hash === hashed) {
+        setInternSession(intern);
+      } else {
+        alert('Invalid User ID or password.');
+      }
+    }
+    setAuthLoading(false);
+  };
+
+  if (internSession) {
+    return <InternPortal internSession={internSession} setInternSession={setInternSession} />;
+  }
+
+  if (!session && !internSession) {
     return (
       <div className="flex h-screen items-center justify-center bg-[#f1f5f9] font-sans">
         <ToastContainer />
-        <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-sm w-full border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full border border-gray-100">
           <div className="flex justify-center mb-6">
             <Activity size={48} className="text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Skynova CRM</h1>
-          <p className="text-gray-500 text-sm mb-8">Admin Access Only</p>
-          <button 
-            onClick={() => supabase.auth.signInWithOAuth({ 
-              provider: 'google',
-              options: {
-                redirectTo: window.location.origin
-              }
-            })}
-            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium py-3 px-4 rounded-lg transition-colors"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Sign in with Google
-          </button>
+          <h1 className="text-2xl font-bold mb-6">Skynova CRM</h1>
+          
+          <div className="flex border-b mb-6">
+            <button onClick={() => setRoute('admin_login')} className={`flex-1 pb-2 font-medium ${currentRoute !== 'intern_login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Admin Login</button>
+            <button onClick={() => setRoute('intern_login')} className={`flex-1 pb-2 font-medium ${currentRoute === 'intern_login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Intern Portal</button>
+          </div>
+
+          {currentRoute === 'intern_login' ? (
+            <form onSubmit={handleInternLogin} className="space-y-4 text-left">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">Internship User ID</label>
+                <input name="intern_id" required placeholder="e.g. INT001" className="w-full border p-3 rounded-lg bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">Password</label>
+                <input type="password" name="password" required className="w-full border p-3 rounded-lg bg-gray-50 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
+              <button type="submit" disabled={authLoading} className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 mt-2">
+                {authLoading ? 'Verifying...' : 'Login to Intern Portal'}
+              </button>
+            </form>
+          ) : (
+            <>
+              <p className="text-gray-500 text-sm mb-6">Admin Access Only</p>
+              <button 
+                onClick={() => supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })}
+                className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium py-3 px-4 rounded-lg transition-colors"
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                Sign in with Google
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
