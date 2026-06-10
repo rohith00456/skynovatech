@@ -140,6 +140,105 @@ create table saved_filters (
   module text, filter_name text, filter_data jsonb,
   created_at timestamp default now()
 );
+
+-- PROJECTS table
+create table projects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  customer_id uuid references customers(id),
+  deal_id uuid references deals(id),
+  assigned_to uuid references users(id),
+  status text check (status in 
+    ('Kickoff','Requirements','Design','Development','Testing','Delivered','Support'))
+    default 'Kickoff',
+  start_date date,
+  expected_delivery date,
+  description text,
+  created_at timestamp default now(),
+  updated_at timestamp default now()
+);
+
+-- MILESTONES table
+create table milestones (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects(id) on delete cascade,
+  title text not null,
+  due_date date,
+  completed boolean default false,
+  completed_at timestamp,
+  created_at timestamp default now()
+);
+
+-- INVOICES table
+create table invoices (
+  id uuid primary key default gen_random_uuid(),
+  invoice_number text unique not null,
+  customer_id uuid references customers(id),
+  deal_id uuid references deals(id),
+  status text check (status in 
+    ('Draft','Sent','Partially Paid','Paid','Overdue')) default 'Draft',
+  items jsonb default '[]',
+  subtotal numeric(12,2) default 0,
+  tax_percent numeric(5,2) default 18,
+  tax_amount numeric(12,2) default 0,
+  total numeric(12,2) default 0,
+  amount_paid numeric(12,2) default 0,
+  due_date date,
+  notes text,
+  created_by uuid references users(id),
+  created_at timestamp default now(),
+  updated_at timestamp default now()
+);
+
+-- PAYMENTS table
+create table payments (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid references invoices(id) on delete cascade,
+  amount numeric(12,2) not null,
+  payment_date date default current_date,
+  method text check (method in ('UPI','Bank Transfer','Cash','Cheque','Online')),
+  reference text,
+  notes text,
+  created_at timestamp default now()
+);
+
+-- SERVICES table (catalogue)
+create table services (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text,
+  unit_price numeric(12,2),
+  category text,
+  is_active boolean default true
+);
+
+-- TICKETS table
+create table tickets (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid references customers(id),
+  project_id uuid references projects(id),
+  subject text not null,
+  description text,
+  status text check (status in ('Open','In Progress','Resolved','Closed')) default 'Open',
+  priority text check (priority in ('Low','Medium','High','Critical')) default 'Medium',
+  assigned_to uuid references users(id),
+  resolved_at timestamp,
+  created_at timestamp default now(),
+  updated_at timestamp default now()
+);
+
+-- LEAD_CAPTURES table (from website contact form)
+create table lead_captures (
+  id uuid primary key default gen_random_uuid(),
+  name text,
+  email text,
+  phone text,
+  message text,
+  source text default 'website',
+  is_converted boolean default false,
+  converted_lead_id uuid references leads(id),
+  created_at timestamp default now()
+);
 */
 
 // --- GLOBAL STATE & CONTEXT ---
@@ -324,6 +423,10 @@ const Sidebar = ({ currentRoute, setRoute }) => {
     { id: 'quotations', label: 'Quotations', icon: FileText },
     { id: 'stipends', label: 'Stipends', icon: DollarSign },
     { id: 'activities', label: 'Activities', icon: Activity },
+    { id: 'projects', label: 'Projects', icon: Briefcase },
+    { id: 'invoices', label: 'Invoices', icon: FileText },
+    { id: 'tickets', label: 'Support Tickets', icon: CheckSquare },
+    { id: 'whatsapp', label: 'WhatsApp', icon: Phone },
     { id: 'reports', label: 'Reports', icon: BarChart },
     { id: 'team', label: 'Team', icon: Users },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -372,9 +475,10 @@ const Sidebar = ({ currentRoute, setRoute }) => {
 
 // 1. Dashboard
 const Dashboard = () => {
-  const [stats, setStats] = useState({ leads: 0, customers: 0, revenue: 0, activeDeals: 0, pendingFollowups: 0, conversionRate: 0 });
+  const [stats, setStats] = useState({ leads: 0, customers: 0, revenue: 0, activeDeals: 0, pendingFollowups: 0, conversionRate: 0, openTickets: 0, pendingInvoices: 0 });
   const [recentActivities, setRecentActivities] = useState([]);
   const [topDeals, setTopDeals] = useState([]);
+  const [leadCaptures, setLeadCaptures] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -383,17 +487,28 @@ const Dashboard = () => {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, payload => {
         setRecentActivities(prev => [payload.new, ...prev].slice(0, 6));
       }).subscribe();
-    return () => supabase.removeChannel(sub);
+    const sub2 = supabase.channel('realtime_lead_captures')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lead_captures' }, payload => {
+        if (!payload.new.is_converted) {
+          setLeadCaptures(prev => [payload.new, ...prev].slice(0, 5));
+        }
+      }).subscribe();
+    return () => {
+      supabase.removeChannel(sub);
+      supabase.removeChannel(sub2);
+    };
   }, []);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [{ count: leadsCount }, { count: custCount }, { data: deals }, { count: followups }] = await Promise.all([
+      const [{ count: leadsCount }, { count: custCount }, { data: deals }, { count: followups }, { count: openTickets }, { count: pendingInvoices }] = await Promise.all([
         supabase.from('leads').select('*', { count: 'exact', head: true }),
         supabase.from('customers').select('*', { count: 'exact', head: true }),
         supabase.from('deals').select('value, stage, name'),
-        supabase.from('followups').select('*', { count: 'exact', head: true }).neq('status', 'Completed')
+        supabase.from('followups').select('*', { count: 'exact', head: true }).neq('status', 'Completed'),
+        supabase.from('tickets').select('*', { count: 'exact', head: true }).in('status', ['Open', 'In Progress']),
+        supabase.from('invoices').select('*', { count: 'exact', head: true }).in('status', ['Sent', 'Partially Paid', 'Overdue'])
       ]);
 
       let totalRev = 0;
@@ -409,7 +524,9 @@ const Dashboard = () => {
         revenue: totalRev,
         activeDeals: activeD,
         pendingFollowups: followups || 0,
-        conversionRate: custCount && leadsCount ? Math.round((custCount / (leadsCount + custCount)) * 100) : 0
+        conversionRate: custCount && leadsCount ? Math.round((custCount / (leadsCount + custCount)) * 100) : 0,
+        openTickets: openTickets || 0,
+        pendingInvoices: pendingInvoices || 0
       });
 
       const { data: acts } = await supabase.from('activities').select('*').order('created_at', { ascending: false }).limit(6);
@@ -417,6 +534,9 @@ const Dashboard = () => {
 
       const { data: td } = await supabase.from('deals').select('name, value, company').order('value', { ascending: false }).limit(5);
       setTopDeals(td || []);
+
+      const { data: lc } = await supabase.from('lead_captures').select('*').eq('is_converted', false).order('created_at', { ascending: false }).limit(5);
+      setLeadCaptures(lc || []);
 
     } catch (e) {
       console.error(e);
@@ -439,6 +559,8 @@ const Dashboard = () => {
           { label: 'Active Deals', val: stats.activeDeals, color: 'text-yellow-600', bg: 'bg-yellow-100' },
           { label: 'Follow-Ups', val: stats.pendingFollowups, color: 'text-red-600', bg: 'bg-red-100' },
           { label: 'Conversion', val: `${stats.conversionRate}%`, color: 'text-teal-600', bg: 'bg-teal-100' },
+          { label: 'Open Tickets', val: stats.openTickets, color: 'text-orange-600', bg: 'bg-orange-100' },
+          { label: 'Pending Invoices', val: stats.pendingInvoices, color: 'text-pink-600', bg: 'bg-pink-100' },
         ].map((s, i) => (
           <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
             <p className="text-gray-500 text-sm font-medium">{s.label}</p>
@@ -448,27 +570,56 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
-          <h3 className="font-semibold mb-4">Top Deals</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b text-sm text-gray-500">
-                  <th className="pb-2">Deal Name</th>
-                  <th className="pb-2">Company</th>
-                  <th className="pb-2 text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topDeals.map((d, i) => (
-                  <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-                    <td className="py-3">{d.name}</td>
-                    <td className="py-3 text-gray-600">{d.company}</td>
-                    <td className="py-3 text-right font-medium">₹{d.value?.toLocaleString()}</td>
+        <div className="lg:col-span-2 flex flex-col gap-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="font-semibold mb-4">Top Deals</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b text-sm text-gray-500">
+                    <th className="pb-2">Deal Name</th>
+                    <th className="pb-2">Company</th>
+                    <th className="pb-2 text-right">Value</th>
                   </tr>
+                </thead>
+                <tbody>
+                  {topDeals.map((d, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
+                      <td className="py-3">{d.name}</td>
+                      <td className="py-3 text-gray-600">{d.company}</td>
+                      <td className="py-3 text-right font-medium">₹{d.value?.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <h3 className="font-semibold mb-4">Website Lead Captures</h3>
+            {leadCaptures.length === 0 ? <p className="text-gray-500 text-sm">No new website leads</p> : (
+              <div className="space-y-4">
+                {leadCaptures.map(lc => (
+                  <div key={lc.id} className="flex justify-between items-center p-3 border rounded-lg hover:bg-gray-50">
+                    <div>
+                      <p className="font-medium">{lc.name} <span className="text-gray-500 text-sm ml-2">{lc.phone} | {lc.email}</span></p>
+                      <p className="text-sm text-gray-600 mt-1">{lc.message?.substring(0, 50)}{lc.message?.length > 50 ? '...' : ''}</p>
+                      <p className="text-xs text-gray-400 mt-1">{new Date(lc.created_at).toLocaleString()}</p>
+                    </div>
+                    <button onClick={async () => {
+                      const { data: newLead } = await supabase.from('leads').insert([{ name: lc.name, email: lc.email, phone: lc.phone, notes: lc.message, source: 'website', status: 'New' }]).select().single();
+                      if (newLead) {
+                        await supabase.from('lead_captures').update({ is_converted: true, converted_lead_id: newLead.id }).eq('id', lc.id);
+                        showToast('Lead created from website capture');
+                        fetchDashboardData();
+                      }
+                    }} className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                      Convert to Lead
+                    </button>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
         </div>
 
@@ -587,6 +738,11 @@ const Leads = () => {
                   <td className="p-4 text-gray-600">{lead.users?.name || 'Unassigned'}</td>
                   <td className="p-4 text-gray-600 text-sm">{new Date(lead.created_at).toLocaleDateString()}</td>
                   <td className="p-4 flex gap-2">
+                    <button onClick={() => {
+                      const url = `https://wa.me/91${lead.phone}?text=Hi%20${encodeURIComponent(lead.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
+                      window.open(url, '_blank');
+                      logActivity(null, 'WhatsApp message sent', 'whatsapp', lead.id, lead.name, null, 'Hi ' + lead.name + ', this is the team at SkynovaTech.');
+                    }} className="text-gray-400 hover:text-green-600"><Phone size={16} /></button>
                     <button className="text-gray-400 hover:text-blue-600"><Edit size={16} /></button>
                     <button onClick={() => deleteLead(lead.id, lead.name)} className="text-gray-400 hover:text-red-600"><Trash size={16} /></button>
                   </td>
@@ -636,7 +792,15 @@ const Customers = () => {
               <div className="w-10 h-10 bg-indigo-100 text-indigo-700 rounded-lg flex items-center justify-center font-bold text-lg">
                 {c.name.charAt(0)}
               </div>
-              <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{c.status || 'Active'}</span>
+              <div className="flex gap-2">
+                <button onClick={(e) => {
+                  e.stopPropagation();
+                  const url = `https://wa.me/91${c.phone}?text=Hi%20${encodeURIComponent(c.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
+                  window.open(url, '_blank');
+                  logActivity(null, 'WhatsApp message sent', 'whatsapp', c.id, c.name, null, 'Hi ' + c.name + ', this is the team at SkynovaTech.');
+                }} className="text-gray-400 hover:text-green-600"><Phone size={16} /></button>
+                <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{c.status || 'Active'}</span>
+              </div>
             </div>
             <h3 className="font-semibold text-gray-900">{c.name}</h3>
             <p className="text-sm text-gray-500 mb-4">{c.company}</p>
@@ -1104,19 +1268,93 @@ const Stipends = () => {
 };
 // 10. Reports Module
 const Reports = () => {
-  // Simplified report charts using dummy data for structure but would be fetched via Supabase Promise.all
-  const data = [
-    { name: 'Jan', revenue: 4000, leads: 24 },
-    { name: 'Feb', revenue: 3000, leads: 13 },
-    { name: 'Mar', revenue: 2000, leads: 98 },
-    { name: 'Apr', revenue: 2780, leads: 39 },
-    { name: 'May', revenue: 1890, leads: 48 },
-    { name: 'Jun', revenue: 2390, leads: 38 },
-  ];
+  const [data, setData] = useState([]);
+  const [dealsData, setDealsData] = useState([]);
+  const [stats, setStats] = useState({ totalRevenue: 0, pendingInvoices: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchReportData = async () => {
+      setLoading(true);
+      try {
+        const [ { data: leadsRes }, { data: invoicesRes }, { data: dealsRes } ] = await Promise.all([
+          supabase.from('leads').select('created_at'),
+          supabase.from('invoices').select('total, status, created_at'),
+          supabase.from('deals').select('stage')
+        ]);
+
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const currentMonth = new Date().getMonth();
+        const reportData = [];
+        for (let i = 5; i >= 0; i--) {
+          let m = currentMonth - i;
+          let y = new Date().getFullYear();
+          if (m < 0) { m += 12; y -= 1; }
+          reportData.push({ name: months[m], monthIndex: m, year: y, revenue: 0, leads: 0 });
+        }
+
+        leadsRes?.forEach(lead => {
+          const d = new Date(lead.created_at);
+          const idx = reportData.findIndex(r => r.monthIndex === d.getMonth() && r.year === d.getFullYear());
+          if (idx !== -1) reportData[idx].leads += 1;
+        });
+
+        let totRev = 0;
+        let pInvoices = 0;
+        invoicesRes?.forEach(inv => {
+          if (inv.status === 'Paid') {
+            totRev += Number(inv.total || 0);
+            const d = new Date(inv.created_at);
+            const idx = reportData.findIndex(r => r.monthIndex === d.getMonth() && r.year === d.getFullYear());
+            if (idx !== -1) reportData[idx].revenue += Number(inv.total || 0);
+          } else if (['Sent', 'Partially Paid', 'Overdue'].includes(inv.status)) {
+            pInvoices++;
+          }
+        });
+
+        const stageCounts = {};
+        dealsRes?.forEach(deal => {
+          const s = deal.stage || 'Unknown';
+          stageCounts[s] = (stageCounts[s] || 0) + 1;
+        });
+        const dData = Object.keys(stageCounts).map(k => ({ stage: k, count: stageCounts[k] }));
+
+        setData(reportData);
+        setDealsData(dData);
+        setStats({ totalRevenue: totRev, pendingInvoices: pInvoices });
+      } catch (err) {
+        console.error("Error fetching report data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchReportData();
+  }, []);
+
+  if (loading) return <div className="p-8 flex justify-center"><Spinner /></div>;
+
   return (
-    <div className="p-6 h-full flex flex-col">
+    <div className="p-6 h-full flex flex-col overflow-y-auto">
       <h2 className="text-2xl font-bold mb-6">Reports & Analytics</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Total Revenue</p>
+            <p className="text-3xl font-bold text-gray-900 mt-1">₹{stats.totalRevenue.toLocaleString()}</p>
+          </div>
+          <div className="p-4 bg-green-100 text-green-600 rounded-full"><DollarSign size={24} /></div>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500 font-medium">Pending Invoices</p>
+            <p className="text-3xl font-bold text-gray-900 mt-1">{stats.pendingInvoices}</p>
+          </div>
+          <div className="p-4 bg-orange-100 text-orange-600 rounded-full"><FileText size={24} /></div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <h3 className="font-semibold mb-4">Revenue Overview</h3>
           <div className="h-64">
@@ -1125,7 +1363,7 @@ const Reports = () => {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" />
                 <YAxis />
-                <RechartsTooltip cursor={{fill: 'transparent'}} />
+                <RechartsTooltip cursor={{fill: 'transparent'}} formatter={(val) => `₹${val.toLocaleString()}`} />
                 <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -1144,6 +1382,21 @@ const Reports = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+        <h3 className="font-semibold mb-4">Deals by Stage</h3>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dealsData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="stage" />
+              <YAxis />
+              <RechartsTooltip cursor={{fill: 'transparent'}} />
+              <Bar dataKey="count" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
@@ -1175,12 +1428,1263 @@ const ActivityLog = () => {
   );
 };
 
+
+const Projects = () => {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  
+  const [customers, setCustomers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [deals, setDeals] = useState([]);
+
+  const fetchProjects = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('projects').select('*, customers(name), users!projects_assigned_to_fkey(name)').order('created_at', { ascending: false });
+    setProjects(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchProjects();
+    supabase.from('customers').select('id, name').then(({data}) => setCustomers(data || []));
+    supabase.from('users').select('id, name').then(({data}) => setUsers(data || []));
+    supabase.from('deals').select('id, name').then(({data}) => setDeals(data || []));
+  }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const proj = {
+      name: fd.get('name'),
+      customer_id: fd.get('customer_id'),
+      deal_id: fd.get('deal_id') || null,
+      assigned_to: fd.get('assigned_to') || null,
+      status: fd.get('status'),
+      start_date: fd.get('start_date') || null,
+      expected_delivery: fd.get('expected_delivery') || null,
+      description: fd.get('description')
+    };
+    const { data, error } = await supabase.from('projects').insert([proj]).select().single();
+    if (error) { showToast(error.message, 'error'); return; }
+    logActivity(null, 'Created Project', 'projects', data.id, data.name);
+    showToast('Project saved');
+    setAddModalOpen(false);
+    fetchProjects();
+  };
+
+  const statusColors = {
+    'Kickoff': 'bg-gray-100 text-gray-800',
+    'Requirements': 'bg-blue-100 text-blue-800',
+    'Design': 'bg-purple-100 text-purple-800',
+    'Development': 'bg-yellow-100 text-yellow-800',
+    'Testing': 'bg-orange-100 text-orange-800',
+    'Delivered': 'bg-green-100 text-green-800',
+    'Support': 'bg-teal-100 text-teal-800'
+  };
+  const stages = ['Kickoff', 'Requirements', 'Design', 'Development', 'Testing', 'Delivered', 'Support'];
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Projects</h2>
+        <button onClick={() => setAddModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          <Plus size={16} /> Add Project
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading ? <Spinner /> : projects.map(p => (
+          <div key={p.id} onClick={() => setSelectedProject(p)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md">
+            <div className="flex justify-between items-start mb-2">
+              <h3 className="font-semibold">{p.name}</h3>
+              <span className={`px-2 py-1 rounded-full text-xs ${statusColors[p.status] || 'bg-gray-100'}`}>{p.status}</span>
+            </div>
+            <p className="text-sm text-gray-500 mb-2">{p.customers?.name}</p>
+            <div className="flex justify-between text-xs text-gray-500 mt-4">
+              <span>{p.users?.name || 'Unassigned'}</span>
+              <span>Due: {p.expected_delivery ? new Date(p.expected_delivery).toLocaleDateString() : 'N/A'}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="Add Project" maxWidth="max-w-xl">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div><label className="block text-sm mb-1">Name *</label><input name="name" required className="w-full border p-2 rounded" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Customer *</label>
+              <select name="customer_id" required className="w-full border p-2 rounded">
+                <option value="">Select Customer...</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Deal (Optional)</label>
+              <select name="deal_id" className="w-full border p-2 rounded">
+                <option value="">None</option>
+                {deals.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Assigned To</label>
+              <select name="assigned_to" className="w-full border p-2 rounded">
+                <option value="">Select User...</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Status</label>
+              <select name="status" defaultValue="Kickoff" className="w-full border p-2 rounded">
+                {stages.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Start Date</label><input type="date" name="start_date" className="w-full border p-2 rounded" /></div>
+            <div><label className="block text-sm mb-1">Expected Delivery</label><input type="date" name="expected_delivery" className="w-full border p-2 rounded" /></div>
+          </div>
+          <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="3" className="w-full border p-2 rounded"></textarea></div>
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded">Save Project</button>
+        </form>
+      </Modal>
+
+      {selectedProject && <ProjectDetailModal project={selectedProject} onClose={() => { setSelectedProject(null); fetchProjects(); }} stages={stages} statusColors={statusColors} />}
+    </div>
+  );
+};
+
+const ProjectDetailModal = ({ project, onClose, stages, statusColors }) => {
+  const [milestones, setMilestones] = useState([]);
+  const [status, setStatus] = useState(project.status);
+
+  const fetchMilestones = async () => {
+    const { data } = await supabase.from('milestones').select('*').eq('project_id', project.id).order('due_date', { ascending: true });
+    setMilestones(data || []);
+  };
+
+  useEffect(() => { fetchMilestones(); }, [project.id]);
+
+  const updateStatus = async (newStatus) => {
+    setStatus(newStatus);
+    await supabase.from('projects').update({ status: newStatus }).eq('id', project.id);
+    logActivity(null, 'Updated Project Status', 'projects', project.id, project.name, status, newStatus);
+    showToast('Project status updated');
+  };
+
+  const handleAddMilestone = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const ms = { project_id: project.id, title: fd.get('title'), due_date: fd.get('due_date') || null };
+    await supabase.from('milestones').insert([ms]);
+    e.target.reset();
+    fetchMilestones();
+    logActivity(null, 'Added Milestone', 'projects', project.id, project.name);
+    showToast('Milestone added');
+  };
+
+  const toggleMilestone = async (ms) => {
+    const val = !ms.completed;
+    await supabase.from('milestones').update({ completed: val, completed_at: val ? new Date().toISOString() : null }).eq('id', ms.id);
+    fetchMilestones();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={`Project: ${project.name}`} maxWidth="max-w-3xl">
+      <div className="mb-6">
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+          {stages.map(s => (
+            <button key={s} onClick={() => updateStatus(s)} className={`px-3 py-1 rounded-full text-xs whitespace-nowrap border ${status === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <p className="text-gray-600 text-sm">{project.description}</p>
+      </div>
+
+      <div className="border-t pt-4">
+        <h4 className="font-semibold mb-3">Milestones</h4>
+        <div className="space-y-2 mb-4">
+          {milestones.map(ms => (
+            <div key={ms.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded border">
+              <input type="checkbox" checked={ms.completed} onChange={() => toggleMilestone(ms)} className="w-4 h-4" />
+              <span className={`flex-1 ${ms.completed ? 'line-through text-gray-400' : ''}`}>{ms.title}</span>
+              <span className="text-xs text-gray-500">{ms.due_date ? new Date(ms.due_date).toLocaleDateString() : ''}</span>
+            </div>
+          ))}
+          {milestones.length === 0 && <p className="text-sm text-gray-500">No milestones yet.</p>}
+        </div>
+        <form onSubmit={handleAddMilestone} className="flex gap-2">
+          <input name="title" required placeholder="Milestone Title" className="flex-1 border p-2 rounded text-sm" />
+          <input type="date" name="due_date" className="border p-2 rounded text-sm w-36" />
+          <button type="submit" className="px-4 py-2 bg-gray-100 border rounded text-sm hover:bg-gray-200">Add</button>
+        </form>
+      </div>
+    </Modal>
+  );
+};
+
+const Invoices = () => {
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isBuilderOpen, setBuilderOpen] = useState(false);
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
+  
+  const [filters, setFilters] = useState({ status: '', customer: '' });
+
+  const fetchInvoices = async () => {
+    setLoading(true);
+    let query = supabase.from('invoices').select('*, customers(name)').order('created_at', { ascending: false });
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.customer) query = query.ilike('customers.name', `%${filters.customer}%`);
+    const { data } = await query;
+    setInvoices(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchInvoices(); }, [filters]);
+
+  const statusColors = {
+    'Draft': 'bg-gray-100 text-gray-800',
+    'Sent': 'bg-blue-100 text-blue-800',
+    'Partially Paid': 'bg-orange-100 text-orange-800',
+    'Paid': 'bg-green-100 text-green-800',
+    'Overdue': 'bg-red-100 text-red-800'
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Invoices</h2>
+        <button onClick={() => setBuilderOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          <Plus size={16} /> New Invoice
+        </button>
+      </div>
+
+      <div className="flex gap-4 mb-4">
+        <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="border p-2 rounded text-sm bg-white w-40">
+          <option value="">All Statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+          <option value="Partially Paid">Partially Paid</option>
+          <option value="Paid">Paid</option>
+          <option value="Overdue">Overdue</option>
+        </select>
+        <input 
+          placeholder="Filter by customer..." 
+          value={filters.customer} 
+          onChange={e => setFilters({...filters, customer: e.target.value})} 
+          className="border p-2 rounded text-sm w-64"
+        />
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-4 font-medium text-gray-600">Invoice #</th>
+                <th className="p-4 font-medium text-gray-600">Customer</th>
+                <th className="p-4 font-medium text-gray-600 text-right">Total (₹)</th>
+                <th className="p-4 font-medium text-gray-600 text-right">Paid (₹)</th>
+                <th className="p-4 font-medium text-gray-600 text-right">Balance (₹)</th>
+                <th className="p-4 font-medium text-gray-600">Status</th>
+                <th className="p-4 font-medium text-gray-600">Due Date</th>
+                <th className="p-4 font-medium text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan="8" className="text-center p-8"><Spinner /></td></tr> : 
+               invoices.map(inv => {
+                 const balance = Number(inv.total) - Number(inv.amount_paid);
+                 const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && inv.status !== 'Paid';
+                 const displayStatus = isOverdue ? 'Overdue' : inv.status;
+                 return (
+                  <tr key={inv.id} className="border-b hover:bg-gray-50">
+                    <td className="p-4 font-medium">{inv.invoice_number}</td>
+                    <td className="p-4">{inv.customers?.name}</td>
+                    <td className="p-4 text-right">₹{Number(inv.total).toLocaleString()}</td>
+                    <td className="p-4 text-right text-green-600">₹{Number(inv.amount_paid).toLocaleString()}</td>
+                    <td className="p-4 text-right font-semibold text-red-600">₹{balance.toLocaleString()}</td>
+                    <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${statusColors[displayStatus]}`}>{displayStatus}</span></td>
+                    <td className="p-4 text-sm text-gray-600">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A'}</td>
+                    <td className="p-4">
+                      {balance > 0 && <button onClick={() => setPaymentModalInvoice({ ...inv, balance })} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Record Payment</button>}
+                    </td>
+                  </tr>
+                 );
+               })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {isBuilderOpen && <InvoiceBuilderModal onClose={() => { setBuilderOpen(false); fetchInvoices(); }} />}
+      {paymentModalInvoice && <RecordPaymentModal invoice={paymentModalInvoice} onClose={() => { setPaymentModalInvoice(null); fetchInvoices(); }} />}
+    </div>
+  );
+};
+
+const InvoiceBuilderModal = ({ onClose }) => {
+  const [customers, setCustomers] = useState([]);
+  const [services, setServices] = useState([]);
+  const [deals, setDeals] = useState([]);
+  
+  const [customerId, setCustomerId] = useState('');
+  const [dealId, setDealId] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [items, setItems] = useState([{ id: 1, service_name: '', description: '', qty: 1, unit_price: 0 }]);
+  
+  // Preferences
+  const pref = JSON.parse(localStorage.getItem('skynova_company_settings') || '{}');
+  const taxPercent = pref.defaultGst || 18;
+  const prefix = pref.invoicePrefix || 'INV';
+  const generatedInvoiceNumber = `${prefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  useEffect(() => {
+    supabase.from('customers').select('id, name').then(({data}) => setCustomers(data || []));
+    supabase.from('services').select('*').eq('is_active', true).then(({data}) => setServices(data || []));
+  }, []);
+
+  useEffect(() => {
+    if (customerId) supabase.from('deals').select('id, name').eq('customer_id', customerId).then(({data}) => setDeals(data || []));
+    else setDeals([]);
+  }, [customerId]);
+
+  const addItem = () => setItems([...items, { id: Date.now(), service_name: '', description: '', qty: 1, unit_price: 0 }]);
+  const removeItem = (id) => setItems(items.filter(i => i.id !== id));
+  
+  const updateItem = (id, field, value) => {
+    setItems(items.map(i => {
+      if (i.id === id) {
+        const updated = { ...i, [field]: value };
+        if (field === 'service_name') {
+          const svc = services.find(s => s.name === value);
+          if (svc) updated.unit_price = svc.unit_price;
+        }
+        return updated;
+      }
+      return i;
+    }));
+  };
+
+  const subtotal = items.reduce((sum, i) => sum + (Number(i.qty) * Number(i.unit_price)), 0);
+  const taxAmount = subtotal * (taxPercent / 100);
+  const grandTotal = subtotal + taxAmount;
+
+  const handleSave = async (status) => {
+    if (!customerId) { showToast('Customer is required', 'error'); return; }
+    
+    const invoice = {
+      invoice_number: generatedInvoiceNumber,
+      customer_id: customerId,
+      deal_id: dealId || null,
+      status,
+      items: items,
+      subtotal,
+      tax_percent: taxPercent,
+      tax_amount: taxAmount,
+      total: grandTotal,
+      due_date: dueDate || null,
+      notes
+    };
+
+    const { data, error } = await supabase.from('invoices').insert([invoice]).select().single();
+    if (error) { showToast(error.message, 'error'); return; }
+    logActivity(null, `Created Invoice ${generatedInvoiceNumber}`, 'invoices', data.id, generatedInvoiceNumber);
+    showToast(`Invoice saved as ${status}`);
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="New Invoice" maxWidth="max-w-4xl">
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm mb-1">Customer *</label>
+            <select value={customerId} onChange={e => setCustomerId(e.target.value)} className="w-full border p-2 rounded text-sm">
+              <option value="">Select Customer...</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div><label className="block text-sm mb-1">Deal (Optional)</label>
+            <select value={dealId} onChange={e => setDealId(e.target.value)} className="w-full border p-2 rounded text-sm" disabled={!customerId}>
+              <option value="">None</option>
+              {deals.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <div><label className="block text-sm mb-1">Invoice #</label><input readOnly value={generatedInvoiceNumber} className="w-full border p-2 rounded text-sm bg-gray-50" /></div>
+          <div><label className="block text-sm mb-1">Due Date</label><input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full border p-2 rounded text-sm" /></div>
+        </div>
+        
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-2">Service Name</th>
+                <th className="p-2">Description</th>
+                <th className="p-2 w-20 text-center">Qty</th>
+                <th className="p-2 w-32 text-right">Unit Price (₹)</th>
+                <th className="p-2 w-32 text-right">Total (₹)</th>
+                <th className="p-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(it => (
+                <tr key={it.id} className="border-b">
+                  <td className="p-2">
+                    <input list="services" value={it.service_name} onChange={e => updateItem(it.id, 'service_name', e.target.value)} placeholder="Type or select" className="w-full border p-1 rounded" />
+                    <datalist id="services">{services.map(s => <option key={s.id} value={s.name} />)}</datalist>
+                  </td>
+                  <td className="p-2"><input value={it.description} onChange={e => updateItem(it.id, 'description', e.target.value)} className="w-full border p-1 rounded" /></td>
+                  <td className="p-2"><input type="number" min="1" value={it.qty} onChange={e => updateItem(it.id, 'qty', e.target.value)} className="w-full border p-1 rounded text-center" /></td>
+                  <td className="p-2"><input type="number" min="0" value={it.unit_price} onChange={e => updateItem(it.id, 'unit_price', e.target.value)} className="w-full border p-1 rounded text-right" /></td>
+                  <td className="p-2 text-right font-medium text-gray-700">{(it.qty * it.unit_price).toLocaleString()}</td>
+                  <td className="p-2 text-center"><button onClick={() => removeItem(it.id)} className="text-red-500 hover:text-red-700"><X size={16}/></button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button onClick={addItem} className="w-full p-2 text-sm text-blue-600 hover:bg-blue-50 font-medium border-t">
+            + Add Line Item
+          </button>
+        </div>
+
+        <div className="flex justify-end pt-4">
+          <div className="w-64 space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Subtotal:</span><span className="font-medium">₹{subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">GST ({taxPercent}%):</span><span className="font-medium">₹{taxAmount.toLocaleString()}</span></div>
+            <div className="flex justify-between text-base font-bold pt-2 border-t"><span>Grand Total:</span><span className="text-blue-600">₹{grandTotal.toLocaleString()}</span></div>
+          </div>
+        </div>
+
+        <div><label className="block text-sm mb-1">Notes</label><textarea value={notes} onChange={e => setNotes(e.target.value)} rows="2" className="w-full border p-2 rounded text-sm"></textarea></div>
+
+        <div className="flex justify-end gap-2 pt-4">
+          <button onClick={() => handleSave('Draft')} className="px-4 py-2 border rounded bg-white hover:bg-gray-50 text-sm">Save as Draft</button>
+          <button onClick={() => handleSave('Sent')} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">Save & Mark Sent</button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+const RecordPaymentModal = ({ invoice, onClose }) => {
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const amount = Number(fd.get('amount'));
+    
+    const payment = {
+      invoice_id: invoice.id,
+      amount,
+      payment_date: fd.get('payment_date'),
+      method: fd.get('method'),
+      reference: fd.get('reference'),
+      notes: fd.get('notes')
+    };
+
+    await supabase.from('payments').insert([payment]);
+    
+    const newAmountPaid = Number(invoice.amount_paid) + amount;
+    const newStatus = newAmountPaid >= Number(invoice.total) ? 'Paid' : 'Partially Paid';
+    
+    await supabase.from('invoices').update({ amount_paid: newAmountPaid, status: newStatus }).eq('id', invoice.id);
+    
+    createNotification(null, 'payment_received', `Payment of ₹${amount} recorded for Invoice ${invoice.invoice_number}`, 'invoices', invoice.id);
+    logActivity(null, `Payment recorded`, 'invoices', invoice.id, invoice.invoice_number, null, `Amount: ₹${amount}`);
+    showToast('Payment recorded');
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={`Record Payment for ${invoice.invoice_number}`}>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div><label className="block text-sm mb-1">Amount (₹) *</label><input type="number" step="0.01" name="amount" required defaultValue={invoice.balance} max={invoice.balance} className="w-full border p-2 rounded" /></div>
+        <div><label className="block text-sm mb-1">Payment Date *</label><input type="date" name="payment_date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full border p-2 rounded" /></div>
+        <div><label className="block text-sm mb-1">Method *</label>
+          <select name="method" required className="w-full border p-2 rounded">
+            {['UPI', 'Bank Transfer', 'Cash', 'Cheque', 'Online'].map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div><label className="block text-sm mb-1">Reference (Transaction ID)</label><input name="reference" className="w-full border p-2 rounded" /></div>
+        <div><label className="block text-sm mb-1">Notes</label><textarea name="notes" rows="2" className="w-full border p-2 rounded"></textarea></div>
+        <button type="submit" className="w-full py-2 bg-green-600 text-white rounded font-medium">Record Payment</button>
+      </form>
+    </Modal>
+  );
+};
+
+const SupportTickets = () => {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ status: '', priority: '' });
+  const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+
+  const [customers, setCustomers] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
+
+  const fetchTickets = async () => {
+    setLoading(true);
+    let query = supabase.from('tickets').select('*, customers(name), users!tickets_assigned_to_fkey(name), projects(name)').order('created_at', { ascending: false });
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.priority) query = query.eq('priority', filters.priority);
+    const { data } = await query;
+    setTickets(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchTickets();
+    supabase.from('customers').select('id, name').then(({data}) => setCustomers(data || []));
+    supabase.from('users').select('id, name').then(({data}) => setUsers(data || []));
+    supabase.from('projects').select('id, name').then(({data}) => setProjects(data || []));
+  }, [filters]);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const ticket = {
+      customer_id: fd.get('customer_id'),
+      project_id: fd.get('project_id') || null,
+      subject: fd.get('subject'),
+      description: fd.get('description'),
+      priority: fd.get('priority'),
+      assigned_to: fd.get('assigned_to') || null
+    };
+
+    const { data, error } = await supabase.from('tickets').insert([ticket]).select().single();
+    if (error) { showToast(error.message, 'error'); return; }
+    
+    if (ticket.assigned_to) {
+      createNotification(ticket.assigned_to, 'ticket_opened', `New ticket: ${ticket.subject}`, 'tickets', data.id);
+    }
+    
+    logActivity(null, 'Created Ticket', 'tickets', data.id, data.subject);
+    showToast('Ticket opened');
+    setAddModalOpen(false);
+    fetchTickets();
+  };
+
+  const priorityColors = { 'Low': 'bg-gray-100 text-gray-800', 'Medium': 'bg-yellow-100 text-yellow-800', 'High': 'bg-orange-100 text-orange-800', 'Critical': 'bg-red-100 text-red-800' };
+  const statusColors = { 'Open': 'bg-blue-100 text-blue-800', 'In Progress': 'bg-yellow-100 text-yellow-800', 'Resolved': 'bg-green-100 text-green-800', 'Closed': 'bg-gray-100 text-gray-800' };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Support Tickets</h2>
+        <button onClick={() => setAddModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          <Plus size={16} /> New Ticket
+        </button>
+      </div>
+
+      <div className="flex gap-4 mb-4">
+        <select value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})} className="border p-2 rounded text-sm bg-white w-40">
+          <option value="">All Statuses</option>
+          {Object.keys(statusColors).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filters.priority} onChange={e => setFilters({...filters, priority: e.target.value})} className="border p-2 rounded text-sm bg-white w-40">
+          <option value="">All Priorities</option>
+          {Object.keys(priorityColors).map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-4 font-medium text-gray-600">Subject</th>
+                <th className="p-4 font-medium text-gray-600">Customer / Project</th>
+                <th className="p-4 font-medium text-gray-600">Priority</th>
+                <th className="p-4 font-medium text-gray-600">Status</th>
+                <th className="p-4 font-medium text-gray-600">Assigned To</th>
+                <th className="p-4 font-medium text-gray-600">Date</th>
+                <th className="p-4 font-medium text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan="7" className="text-center p-8"><Spinner /></td></tr> : 
+               tickets.map(t => (
+                 <tr key={t.id} className="border-b hover:bg-gray-50">
+                   <td className="p-4 font-medium">{t.subject}</td>
+                   <td className="p-4 text-sm"><div className="font-medium text-gray-800">{t.customers?.name}</div><div className="text-gray-500">{t.projects?.name}</div></td>
+                   <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${priorityColors[t.priority]}`}>{t.priority}</span></td>
+                   <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${statusColors[t.status]}`}>{t.status}</span></td>
+                   <td className="p-4 text-sm text-gray-600">{t.users?.name || 'Unassigned'}</td>
+                   <td className="p-4 text-sm text-gray-600">{new Date(t.created_at).toLocaleDateString()}</td>
+                   <td className="p-4">
+                     <button onClick={() => setSelectedTicket(t)} className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-sm font-medium border border-blue-200">View</button>
+                   </td>
+                 </tr>
+               ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <Modal isOpen={isAddModalOpen} onClose={() => setAddModalOpen(false)} title="New Support Ticket" maxWidth="max-w-2xl">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div><label className="block text-sm mb-1">Subject *</label><input name="subject" required className="w-full border p-2 rounded text-sm" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Customer *</label>
+              <select name="customer_id" required className="w-full border p-2 rounded text-sm">
+                <option value="">Select...</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Project</label>
+              <select name="project_id" className="w-full border p-2 rounded text-sm">
+                <option value="">None</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Priority</label>
+              <select name="priority" defaultValue="Medium" className="w-full border p-2 rounded text-sm">
+                {['Low', 'Medium', 'High', 'Critical'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Assigned To</label>
+              <select name="assigned_to" className="w-full border p-2 rounded text-sm">
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="4" className="w-full border p-2 rounded text-sm"></textarea></div>
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded font-medium">Create Ticket</button>
+        </form>
+      </Modal>
+
+      {selectedTicket && <TicketDetailModal ticket={selectedTicket} onClose={() => { setSelectedTicket(null); fetchTickets(); }} statusColors={statusColors} priorityColors={priorityColors} />}
+    </div>
+  );
+};
+
+const TicketDetailModal = ({ ticket, onClose, statusColors, priorityColors }) => {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [status, setStatus] = useState(ticket.status);
+
+  const fetchComments = async () => {
+    const { data } = await supabase.from('activities').select('*, users(name)').eq('module', 'ticket').eq('record_id', ticket.id).order('created_at', { ascending: true });
+    setComments(data || []);
+  };
+
+  useEffect(() => { fetchComments(); }, [ticket.id]);
+
+  const updateStatus = async (newStatus) => {
+    setStatus(newStatus);
+    const updatePayload = { status: newStatus };
+    if (newStatus === 'Resolved') updatePayload.resolved_at = new Date().toISOString();
+    await supabase.from('tickets').update(updatePayload).eq('id', ticket.id);
+    logActivity(null, `Status changed to ${newStatus}`, 'ticket', ticket.id, ticket.subject);
+    showToast(`Ticket marked as ${newStatus}`);
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    await logActivity(null, 'Comment', 'ticket', ticket.id, ticket.subject, null, newComment);
+    setNewComment('');
+    showToast('Comment added');
+    fetchComments();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Ticket Details" maxWidth="max-w-3xl">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h3 className="text-xl font-bold mb-1">{ticket.subject}</h3>
+          <p className="text-sm text-gray-500">Customer: {ticket.customers?.name} | Priority: <span className={priorityColors[ticket.priority] + ' px-2 py-0.5 rounded-full text-xs'}>{ticket.priority}</span></p>
+        </div>
+        <div className="flex gap-2">
+          {Object.keys(statusColors).map(s => (
+            <button key={s} onClick={() => updateStatus(s)} className={`px-3 py-1 rounded text-sm border font-medium ${status === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="bg-gray-50 p-4 rounded-lg mb-6 border text-sm text-gray-700 whitespace-pre-wrap">
+        {ticket.description || 'No description provided.'}
+      </div>
+
+      <div className="border-t pt-4">
+        <h4 className="font-semibold mb-4">Comments</h4>
+        <div className="space-y-4 mb-4 max-h-60 overflow-y-auto">
+          {comments.map(c => (
+            <div key={c.id} className="bg-gray-50 p-3 rounded-lg border">
+              <div className="flex justify-between items-center mb-1">
+                <span className="font-medium text-sm">{c.users?.name || 'System'}</span>
+                <span className="text-xs text-gray-500">{new Date(c.created_at).toLocaleString()}</span>
+              </div>
+              <p className="text-sm text-gray-800">{c.action === 'Comment' ? JSON.parse(c.new_value) : c.action}</p>
+            </div>
+          ))}
+          {comments.length === 0 && <p className="text-sm text-gray-500">No comments yet.</p>}
+        </div>
+        <div className="flex gap-2">
+          <textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Type your comment..." rows="2" className="flex-1 border p-2 rounded text-sm"></textarea>
+          <button onClick={handleAddComment} className="px-4 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">Add Comment</button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+const WhatsAppCenter = () => {
+  const [contacts, setContacts] = useState([]);
+  const [filteredContacts, setFilteredContacts] = useState([]);
+  const [search, setSearch] = useState('');
+  const [selectedContact, setSelectedContact] = useState(null);
+  
+  const [message, setMessage] = useState('');
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [{ data: leads }, { data: custs }] = await Promise.all([
+        supabase.from('leads').select('id, name, phone'),
+        supabase.from('customers').select('id, name, phone')
+      ]);
+      const combined = [
+        ...(leads || []).map(l => ({ ...l, type: 'Lead' })),
+        ...(custs || []).map(c => ({ ...c, type: 'Customer' }))
+      ].filter(c => c.phone);
+      
+      setContacts(combined);
+      setFilteredContacts(combined);
+    };
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    setFilteredContacts(contacts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search)));
+  }, [search, contacts]);
+
+  useEffect(() => {
+    if (selectedContact) {
+      supabase.from('activities').select('*').eq('module', 'whatsapp').eq('record_id', selectedContact.id).order('created_at', { ascending: false }).limit(10)
+        .then(({data}) => setHistory(data || []));
+    }
+  }, [selectedContact]);
+
+  const templates = {
+    'Initial Follow-up': "Hi {name}, this is the team at SkynovaTech. Thank you for your interest! We'd love to understand your requirements. When would be a good time to connect?",
+    'Proposal Follow-up': "Hi {name}, wanted to follow up on our recent proposal. Please let us know if you have any questions or need any changes. We're happy to help!",
+    'Payment Reminder': "Hi {name}, this is a gentle reminder regarding your pending payment. Kindly arrange the payment at your earliest convenience. Thank you!",
+    'Project Update': "Hi {name}, a quick update on your project — things are progressing well. We'll keep you posted on the next milestone. Thank you for your trust!",
+    'Custom Message': ""
+  };
+
+  const handleTemplateSelect = (e) => {
+    const tmpl = templates[e.target.value];
+    if (selectedContact) {
+      setMessage(tmpl.replace('{name}', selectedContact.name));
+    }
+  };
+
+  const openWhatsApp = () => {
+    if (!selectedContact || !message.trim()) return;
+    const cleanPhone = selectedContact.phone.replace(/[\s\-\+]/g, '');
+    const phoneNum = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+    const url = `https://wa.me/${phoneNum}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+    
+    logActivity(null, 'WhatsApp message sent', 'whatsapp', selectedContact.id, selectedContact.name, null, message.substring(0, 100));
+    showToast('WhatsApp opened — send the message manually');
+    
+    // Optimistic UI update for history
+    setHistory([{ id: Date.now(), action: 'WhatsApp message sent', new_value: JSON.stringify(message.substring(0, 100)), created_at: new Date().toISOString() }, ...history].slice(0, 10));
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <h2 className="text-2xl font-bold mb-6">WhatsApp Center</h2>
+      <div className="flex-1 flex gap-6 overflow-hidden">
+        
+        {/* Left Panel - Contacts */}
+        <div className="w-80 bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col shrink-0">
+          <div className="p-4 border-b">
+            <input type="text" placeholder="Search name or phone..." value={search} onChange={e => setSearch(e.target.value)} className="w-full border p-2 rounded-lg text-sm bg-gray-50 focus:bg-white" />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {filteredContacts.map(c => (
+              <div key={c.id} onClick={() => setSelectedContact(c)} className={`p-4 border-b cursor-pointer hover:bg-gray-50 flex flex-col ${selectedContact?.id === c.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="font-semibold text-gray-900">{c.name}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.type === 'Lead' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{c.type}</span>
+                </div>
+                <span className="text-sm text-gray-500">{c.phone}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Panel - Composer & Log */}
+        <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+          {selectedContact ? (
+            <>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="flex justify-between items-center mb-6 border-b pb-4">
+                  <div>
+                    <h3 className="text-xl font-bold flex items-center gap-2"><Phone className="text-green-500"/> {selectedContact.name}</h3>
+                    <p className="text-gray-500">{selectedContact.phone} • {selectedContact.type}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Template</label>
+                    <select onChange={handleTemplateSelect} className="w-full border p-2 rounded-lg text-sm">
+                      <option value="">Select a template...</option>
+                      {Object.keys(templates).map(k => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Message Content</label>
+                    <textarea value={message} onChange={e => setMessage(e.target.value)} rows="5" className="w-full border p-3 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none"></textarea>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg border text-sm text-gray-700 whitespace-pre-wrap">
+                    <span className="font-semibold block mb-2 text-gray-500">Preview:</span>
+                    {message || 'Your message preview will appear here.'}
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setMessage('')} className="px-4 py-2 border rounded-lg text-gray-600 hover:bg-gray-50 font-medium">Clear</button>
+                    <button onClick={openWhatsApp} disabled={!message.trim()} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 font-medium flex items-center gap-2 disabled:opacity-50">
+                      <Phone size={18} /> Open WhatsApp
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex-1 overflow-y-auto">
+                <h4 className="font-semibold mb-4 text-gray-800">Message History</h4>
+                <div className="space-y-3">
+                  {history.map(h => (
+                    <div key={h.id} className="p-3 bg-gray-50 rounded-lg border flex gap-3">
+                      <Phone size={16} className="text-green-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm text-gray-800 italic">"{h.new_value ? JSON.parse(h.new_value) : ''}..."</p>
+                        <p className="text-xs text-gray-500 mt-1">{new Date(h.created_at).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {history.length === 0 && <p className="text-sm text-gray-500">No previous messages found.</p>}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center text-gray-400 flex-col gap-2">
+              <Phone size={48} className="text-gray-300" />
+              <p>Select a contact to start messaging</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const NotificationCenter = () => {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    setLoading(true);
+    // Hardcoded to match any or the first user, typically you'd filter by session.user.id
+    const { data } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(50);
+    setNotifications(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchNotifications(); }, []);
+
+  const markAllRead = async () => {
+    await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+    fetchNotifications();
+    showToast('All notifications marked as read');
+  };
+
+  const markSingleRead = async (id) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: true } : n));
+  };
+
+  const getIcon = (type) => {
+    switch (type) {
+      case 'deal_update': return <BarChart2 size={20} className="text-blue-500" />;
+      case 'task_due': return <CheckSquare size={20} className="text-orange-500" />;
+      case 'payment_received': return <DollarSign size={20} className="text-green-500" />;
+      case 'ticket_opened': return <CheckSquare size={20} className="text-purple-500" />;
+      case 'proposal_accepted': return <FileText size={20} className="text-teal-500" />;
+      case 'lead_assigned': return <Users size={20} className="text-indigo-500" />;
+      default: return <Bell size={20} className="text-gray-500" />;
+    }
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Notification Center</h2>
+        <button onClick={markAllRead} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-md hover:bg-gray-50 shadow-sm font-medium">
+          <CheckCircle size={16} /> Mark All as Read
+        </button>
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="p-4 w-12 text-center">Type</th>
+                <th className="p-4 font-medium text-gray-600">Message</th>
+                <th className="p-4 font-medium text-gray-600">Module</th>
+                <th className="p-4 font-medium text-gray-600 w-48 text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <tr><td colSpan="4" className="text-center p-8"><Spinner /></td></tr> : 
+               notifications.map(n => (
+                 <tr key={n.id} onClick={() => !n.is_read && markSingleRead(n.id)} className={`border-b hover:bg-gray-50 cursor-pointer transition-colors ${!n.is_read ? 'bg-blue-50/50 font-medium' : 'text-gray-600'}`}>
+                   <td className="p-4 text-center">{getIcon(n.type)}</td>
+                   <td className="p-4 text-gray-900">{n.message}</td>
+                   <td className="p-4 text-sm capitalize">{n.related_module?.replace('_', ' ') || 'General'}</td>
+                   <td className="p-4 text-sm text-right whitespace-nowrap">{new Date(n.created_at).toLocaleString()}</td>
+                 </tr>
+               ))}
+               {notifications.length === 0 && !loading && (
+                 <tr><td colSpan="4" className="text-center p-8 text-gray-500">No notifications to display.</td></tr>
+               )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TeamManagement = () => {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setModalOpen] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+    setUsers(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const userData = {
+      name: fd.get('name'),
+      email: fd.get('email'),
+      phone: fd.get('phone'),
+      role: fd.get('role'),
+      department: fd.get('department'),
+      joining_date: fd.get('joining_date') || null,
+      avatar_color: fd.get('avatar_color') || 'blue'
+    };
+
+    if (editUser) {
+      await supabase.from('users').update(userData).eq('id', editUser.id);
+      showToast('Team member updated');
+    } else {
+      userData.status = 'Active';
+      await supabase.from('users').insert([userData]);
+      showToast('Team member added');
+    }
+    setModalOpen(false);
+    fetchUsers();
+  };
+
+  const toggleStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    await supabase.from('users').update({ status: newStatus }).eq('id', id);
+    setUsers(users.map(u => u.id === id ? { ...u, status: newStatus } : u));
+    showToast(`Status updated to ${newStatus}`);
+  };
+
+  const roleColors = { 'Admin': 'bg-purple-100 text-purple-800', 'Manager': 'bg-blue-100 text-blue-800', 'Sales': 'bg-green-100 text-green-800', 'Support': 'bg-teal-100 text-teal-800', 'Intern': 'bg-gray-100 text-gray-800' };
+  const bgColors = { 'blue': 'bg-blue-500', 'green': 'bg-green-500', 'purple': 'bg-purple-500', 'red': 'bg-red-500', 'orange': 'bg-orange-500', 'teal': 'bg-teal-500' };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Team Management</h2>
+        <button onClick={() => { setEditUser(null); setModalOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium">
+          <Plus size={16} /> Add Team Member
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {loading ? <Spinner /> : users.map(u => (
+          <div key={u.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 relative">
+            <button onClick={() => { setEditUser(u); setModalOpen(true); }} className="absolute top-4 right-4 text-gray-400 hover:text-blue-600"><Edit size={16} /></button>
+            <div className="flex flex-col items-center mb-4 pt-2">
+              <div className={`w-16 h-16 rounded-full ${bgColors[u.avatar_color] || 'bg-blue-500'} text-white flex items-center justify-center text-2xl font-bold mb-3 shadow-md`}>
+                {u.name?.charAt(0) || 'U'}
+              </div>
+              <h3 className="font-bold text-lg text-gray-900">{u.name}</h3>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${roleColors[u.role] || 'bg-gray-100'}`}>{u.role || 'Member'}</span>
+            </div>
+            <div className="space-y-2 text-sm text-gray-600 border-t pt-4">
+              <div className="flex justify-between"><span>Email</span><span className="font-medium text-gray-800 truncate ml-2">{u.email}</span></div>
+              <div className="flex justify-between"><span>Phone</span><span className="font-medium text-gray-800">{u.phone || '-'}</span></div>
+              <div className="flex justify-between"><span>Dept</span><span className="font-medium text-gray-800">{u.department || '-'}</span></div>
+              <div className="flex justify-between"><span>Joined</span><span className="font-medium text-gray-800">{u.joining_date ? new Date(u.joining_date).toLocaleDateString() : '-'}</span></div>
+            </div>
+            <div className="mt-4 pt-4 border-t flex justify-between items-center">
+              <span className="text-sm font-medium text-gray-500">Status</span>
+              <button onClick={() => toggleStatus(u.id, u.status)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${u.status === 'Active' ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${u.status === 'Active' ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setModalOpen(false)} title={editUser ? "Edit Team Member" : "Add Team Member"} maxWidth="max-w-md">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div><label className="block text-sm mb-1">Full Name *</label><input name="name" required defaultValue={editUser?.name} className="w-full border p-2 rounded text-sm" /></div>
+          <div><label className="block text-sm mb-1">Email *</label><input type="email" name="email" required defaultValue={editUser?.email} className="w-full border p-2 rounded text-sm" /></div>
+          <div><label className="block text-sm mb-1">Phone</label><input name="phone" defaultValue={editUser?.phone} className="w-full border p-2 rounded text-sm" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Role</label>
+              <select name="role" defaultValue={editUser?.role || 'Intern'} className="w-full border p-2 rounded text-sm">
+                {Object.keys(roleColors).map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div><label className="block text-sm mb-1">Department</label><input name="department" defaultValue={editUser?.department} className="w-full border p-2 rounded text-sm" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm mb-1">Joining Date</label><input type="date" name="joining_date" defaultValue={editUser?.joining_date} className="w-full border p-2 rounded text-sm" /></div>
+            <div><label className="block text-sm mb-1">Avatar Color</label>
+              <select name="avatar_color" defaultValue={editUser?.avatar_color || 'blue'} className="w-full border p-2 rounded text-sm">
+                {Object.keys(bgColors).map(c => <option key={c} value={c} className="capitalize">{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded font-medium mt-4">Save Member</button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
+const SettingsPage = () => {
+  const [activeTab, setActiveTab] = useState('Company');
+  const [companySettings, setCompanySettings] = useState(() => JSON.parse(localStorage.getItem('skynova_company_settings') || '{}'));
+  const [preferences, setPreferences] = useState(() => JSON.parse(localStorage.getItem('skynova_company_settings') || '{}'));
+  
+  const [services, setServices] = useState([]);
+  const [loadingServices, setLoadingServices] = useState(false);
+  const [isServiceModalOpen, setServiceModalOpen] = useState(false);
+  const [editService, setEditService] = useState(null);
+
+  const fetchServices = async () => {
+    setLoadingServices(true);
+    const { data } = await supabase.from('services').select('*').order('name');
+    setServices(data || []);
+    setLoadingServices(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'Services') fetchServices();
+  }, [activeTab]);
+
+  const saveCompanySettings = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const settings = {
+      ...companySettings,
+      companyName: fd.get('companyName'),
+      tagline: fd.get('tagline'),
+      address: fd.get('address'),
+      phone: fd.get('phone'),
+      email: fd.get('email'),
+      gstNumber: fd.get('gstNumber'),
+      website: fd.get('website')
+    };
+    localStorage.setItem('skynova_company_settings', JSON.stringify(settings));
+    setCompanySettings(settings);
+    showToast('Company Settings saved');
+  };
+
+  const savePreferences = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const prefs = {
+      ...preferences,
+      defaultGst: Number(fd.get('defaultGst')),
+      invoicePrefix: fd.get('invoicePrefix'),
+      paymentTerms: fd.get('paymentTerms')
+    };
+    localStorage.setItem('skynova_company_settings', JSON.stringify(prefs));
+    setPreferences(prefs);
+    showToast('Preferences saved');
+  };
+
+  const handleServiceSave = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const service = {
+      name: fd.get('name'),
+      description: fd.get('description'),
+      category: fd.get('category'),
+      unit_price: fd.get('unit_price') ? Number(fd.get('unit_price')) : 0,
+      is_active: fd.get('is_active') === 'on'
+    };
+
+    if (editService) {
+      await supabase.from('services').update(service).eq('id', editService.id);
+      showToast('Service updated');
+    } else {
+      await supabase.from('services').insert([service]);
+      showToast('Service added');
+    }
+    setServiceModalOpen(false);
+    fetchServices();
+  };
+
+  const deleteService = async (id) => {
+    if (!confirm('Delete this service?')) return;
+    await supabase.from('services').delete().eq('id', id);
+    showToast('Service deleted');
+    fetchServices();
+  };
+
+  const toggleServiceActive = async (id, currentVal) => {
+    await supabase.from('services').update({ is_active: !currentVal }).eq('id', id);
+    setServices(services.map(s => s.id === id ? { ...s, is_active: !currentVal } : s));
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <h2 className="text-2xl font-bold mb-6">Settings</h2>
+      
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden">
+        <div className="flex border-b">
+          {['Company', 'Services', 'Preferences'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-4 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+        
+        <div className="p-6 overflow-y-auto flex-1">
+          {activeTab === 'Company' && (
+            <form onSubmit={saveCompanySettings} className="max-w-2xl space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div><label className="block text-sm font-medium mb-1">Company Name</label><input name="companyName" defaultValue={companySettings.companyName} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+                <div><label className="block text-sm font-medium mb-1">Tagline</label><input name="tagline" defaultValue={companySettings.tagline} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+              </div>
+              <div><label className="block text-sm font-medium mb-1">Address</label><textarea name="address" defaultValue={companySettings.address} rows="3" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500"></textarea></div>
+              <div className="grid grid-cols-2 gap-6">
+                <div><label className="block text-sm font-medium mb-1">Phone</label><input name="phone" defaultValue={companySettings.phone} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+                <div><label className="block text-sm font-medium mb-1">Email</label><input type="email" name="email" defaultValue={companySettings.email} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div><label className="block text-sm font-medium mb-1">GST Number</label><input name="gstNumber" defaultValue={companySettings.gstNumber} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+                <div><label className="block text-sm font-medium mb-1">Website</label><input name="website" defaultValue={companySettings.website} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+              </div>
+              <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">Save Company Settings</button>
+            </form>
+          )}
+
+          {activeTab === 'Services' && (
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-semibold text-lg text-gray-800">Service Catalogue</h3>
+                <button onClick={() => { setEditService(null); setServiceModalOpen(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium">
+                  <Plus size={16} /> Add Service
+                </button>
+              </div>
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="p-3 font-medium text-gray-600">Name</th>
+                      <th className="p-3 font-medium text-gray-600">Category</th>
+                      <th className="p-3 font-medium text-gray-600 text-right">Unit Price (₹)</th>
+                      <th className="p-3 font-medium text-gray-600 text-center">Active</th>
+                      <th className="p-3 font-medium text-gray-600 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loadingServices ? <tr><td colSpan="5" className="text-center p-8"><Spinner /></td></tr> :
+                     services.map(s => (
+                       <tr key={s.id} className="border-b hover:bg-gray-50">
+                         <td className="p-3 font-medium text-gray-900">{s.name}</td>
+                         <td className="p-3 text-gray-600">{s.category}</td>
+                         <td className="p-3 text-right font-medium">₹{Number(s.unit_price).toLocaleString()}</td>
+                         <td className="p-3 text-center">
+                           <input type="checkbox" checked={s.is_active} onChange={() => toggleServiceActive(s.id, s.is_active)} className="w-4 h-4 text-blue-600 cursor-pointer" />
+                         </td>
+                         <td className="p-3 text-right flex justify-end gap-2">
+                           <button onClick={() => { setEditService(s); setServiceModalOpen(true); }} className="p-1 text-gray-400 hover:text-blue-600"><Edit size={16} /></button>
+                           <button onClick={() => deleteService(s.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash size={16} /></button>
+                         </td>
+                       </tr>
+                     ))
+                    }
+                    {services.length === 0 && !loadingServices && <tr><td colSpan="5" className="text-center p-8 text-gray-500">No services added yet.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'Preferences' && (
+            <form onSubmit={savePreferences} className="max-w-2xl space-y-6">
+              <div className="grid grid-cols-2 gap-6">
+                <div><label className="block text-sm font-medium mb-1">Default GST %</label><input type="number" name="defaultGst" defaultValue={preferences.defaultGst || 18} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+                <div><label className="block text-sm font-medium mb-1">Invoice Prefix</label><input name="invoicePrefix" defaultValue={preferences.invoicePrefix || 'INV'} className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" /></div>
+              </div>
+              <div><label className="block text-sm font-medium mb-1">Default Payment Terms</label><textarea name="paymentTerms" defaultValue={preferences.paymentTerms} rows="4" className="w-full border p-2 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g. 100% advance before delivery..."></textarea></div>
+              <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700">Save Preferences</button>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <Modal isOpen={isServiceModalOpen} onClose={() => setServiceModalOpen(false)} title={editService ? "Edit Service" : "Add Service"} maxWidth="max-w-md">
+        <form onSubmit={handleServiceSave} className="space-y-4">
+          <div><label className="block text-sm mb-1">Service Name *</label><input name="name" required defaultValue={editService?.name} className="w-full border p-2 rounded text-sm" /></div>
+          <div><label className="block text-sm mb-1">Category</label>
+            <select name="category" defaultValue={editService?.category || 'Web Development'} className="w-full border p-2 rounded text-sm">
+              {['Web Development', 'Mobile App', 'UI-UX Design', 'SEO', 'Maintenance', 'Consulting', 'Other'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div><label className="block text-sm mb-1">Unit Price (₹) *</label><input type="number" name="unit_price" required min="0" defaultValue={editService?.unit_price} className="w-full border p-2 rounded text-sm" /></div>
+          <div><label className="block text-sm mb-1">Description</label><textarea name="description" defaultValue={editService?.description} rows="3" className="w-full border p-2 rounded text-sm"></textarea></div>
+          <div className="flex items-center gap-2 mt-2">
+            <input type="checkbox" name="is_active" id="is_active" defaultChecked={editService ? editService.is_active : true} className="w-4 h-4 text-blue-600 cursor-pointer" />
+            <label htmlFor="is_active" className="text-sm font-medium cursor-pointer">Active Service</label>
+          </div>
+          <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded font-medium mt-4">Save Service</button>
+        </form>
+      </Modal>
+    </div>
+  );
+};
+
 // --- APP COMPONENT ---
 
 export default function SkynovaCRM() {
   const [currentRoute, setRoute] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isNotificationsOpen, setNotificationsOpen] = useState(false);
+  const [recentNotifications, setRecentNotifications] = useState([]);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -1199,8 +2703,9 @@ export default function SkynovaCRM() {
   const checkAdmin = async (session) => {
     if (session) {
       const email = session.user?.email?.toLowerCase().trim();
-      if (email !== 'rohithmech2006@gmail.com') {
-        alert('Access Denied: Your email (' + email + ') is not authorized. Only rohithmech2006@gmail.com can log in.');
+      const authorizedEmails = ['rohithmech2006@gmail.com', 'nirmalraj9607@gmail.com', 'skynovatechsolutions@gmail.com'];
+      if (!authorizedEmails.includes(email)) {
+        alert('Access Denied: Your email (' + email + ') is not authorized. Only admins can log in.');
         await supabase.auth.signOut();
         setSession(null);
       } else {
@@ -1218,13 +2723,27 @@ export default function SkynovaCRM() {
     supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false)
       .then(({count}) => setUnreadCount(count || 0));
 
+    supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(10)
+      .then(({data}) => setRecentNotifications(data || []));
+
     const sub = supabase.channel('realtime_notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
         setUnreadCount(prev => prev + 1);
+        setRecentNotifications(prev => [payload.new, ...prev].slice(0, 10));
       }).subscribe();
 
     return () => supabase.removeChannel(sub);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (isNotificationsOpen && !e.target.closest('.notifications-dropdown-container')) {
+        setNotificationsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isNotificationsOpen]);
 
   const renderContent = () => {
     switch (currentRoute) {
@@ -1237,12 +2756,15 @@ export default function SkynovaCRM() {
       case 'followups': return <FollowUps />;
       case 'quotations': return <Quotations />;
       case 'stipends': return <Stipends />;
+      case 'projects': return <Projects />;
+      case 'invoices': return <Invoices />;
+      case 'tickets': return <SupportTickets />;
+      case 'whatsapp': return <WhatsAppCenter />;
+      case 'team': return <TeamManagement />;
+      case 'notifications': return <NotificationCenter />;
+      case 'settings': return <SettingsPage />;
       case 'reports': return <Reports />;
       case 'activities': return <ActivityLog />;
-      // Fallbacks for others
-      case 'team': return <div className="p-6"><h2>Team Management (Not Implemented in Demo)</h2></div>;
-      case 'notifications': return <div className="p-6"><h2>Notification Center</h2></div>;
-      case 'settings': return <div className="p-6"><h2>Settings</h2></div>;
       default: return <Dashboard />;
     }
   };
@@ -1307,14 +2829,51 @@ export default function SkynovaCRM() {
           </div>
           
           <div className="flex items-center gap-4">
-            <button className="relative p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors">
-              <Bell size={20} />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
-                  {unreadCount}
-                </span>
+            <div className="relative notifications-dropdown-container">
+              <button onClick={() => setNotificationsOpen(!isNotificationsOpen)} className="relative p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors">
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+              {isNotificationsOpen && (
+                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-100 shadow-xl rounded-xl z-50 overflow-hidden flex flex-col">
+                  <div className="p-3 bg-gray-50 border-b font-medium text-gray-700">Notifications</div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {recentNotifications.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500">No new notifications</div>
+                    ) : (
+                      recentNotifications.map(n => {
+                        let Icon = Bell;
+                        if (n.type === 'deal_update') Icon = BarChart2;
+                        else if (n.type === 'task_due') Icon = CheckSquare;
+                        else if (n.type === 'payment_received') Icon = DollarSign;
+                        else if (n.type === 'ticket_opened') Icon = CheckSquare;
+                        else if (n.type === 'proposal_accepted') Icon = FileText;
+                        else if (n.type === 'lead_assigned') Icon = Users;
+
+                        return (
+                          <div key={n.id} className={`p-3 border-b hover:bg-gray-50 flex items-start gap-3 ${!n.is_read ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mt-1"><Icon size={16} className="text-blue-500"/></div>
+                            <div>
+                              <p className="text-sm text-gray-800">{n.message}</p>
+                              <p className="text-xs text-gray-500 mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  <button onClick={async () => {
+                    await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+                    setUnreadCount(0);
+                    setRecentNotifications(recentNotifications.map(n => ({...n, is_read: true})));
+                  }} className="p-2 text-center text-sm text-blue-600 hover:bg-gray-50 border-t font-medium">Mark all as read</button>
+                </div>
               )}
-            </button>
+            </div>
             <div className="w-px h-6 bg-gray-200"></div>
             <button className="flex items-center gap-2 hover:bg-gray-50 p-1 pr-2 rounded-full border border-transparent hover:border-gray-200 transition-all">
               <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold uppercase">
