@@ -648,6 +648,66 @@ const Dashboard = () => {
   );
 };
 
+const ConvertLeadToDealModal = ({ lead, onClose }) => {
+  const [formData, setFormData] = useState({ name: `${lead?.company || lead?.name} - Deal`, value: '', stage: 'Lead In' });
+  const [saving, setSaving] = useState(false);
+  const stages = ['Lead In', 'Contact Made', 'Demo Scheduled', 'Proposal Sent', 'Negotiation', 'Closed Won', 'Closed Lost'];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    
+    // 1. Create Customer
+    const { data: custData, error: custErr } = await supabase.from('customers').insert([{
+      name: lead.name, email: lead.email, phone: lead.phone, company: lead.company, status: 'Active'
+    }]).select().single();
+
+    if (custErr) {
+      alert("Error creating customer: " + custErr.message);
+      setSaving(false); return;
+    }
+
+    // 2. Create Deal
+    const { error: dealErr } = await supabase.from('deals').insert([{
+      name: formData.name, value: formData.value, stage: formData.stage, customer_id: custData.id
+    }]);
+
+    if (dealErr) {
+      alert("Error creating deal: " + dealErr.message);
+      setSaving(false); return;
+    }
+
+    // 3. Delete Lead
+    await supabase.from('leads').delete().eq('id', lead.id);
+    
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add to Pipeline</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">This will convert <strong>{lead?.name}</strong> to a Customer and create a new Deal.</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Deal Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input required type="number" placeholder="Deal Value (₹)" value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <select value={formData.stage} onChange={e => setFormData({...formData, stage: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            {stages.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Add to Pipeline'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // 2. Leads Module
 const Leads = () => {
   const [leads, setLeads] = useState([]);
@@ -657,6 +717,8 @@ const Leads = () => {
   const pageSize = 25;
   const [isFilterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState({ name: '', email: '', phone: '', company: '', status: [], priority: [], source: [], tags: [], dateFrom: '', dateTo: '' });
+  const [dealModalOpen, setDealModalOpen] = useState(false);
+  const [selectedLeadForDeal, setSelectedLeadForDeal] = useState(null);
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -768,6 +830,7 @@ const Leads = () => {
                   <td className="p-4 text-gray-600">{lead.users?.name || 'Unassigned'}</td>
                   <td className="p-4 text-gray-600 text-sm">{new Date(lead.created_at).toLocaleDateString()}</td>
                   <td className="p-4 flex gap-2">
+                    <button onClick={() => { setSelectedLeadForDeal(lead); setDealModalOpen(true); }} title="Add to Sales Pipeline" className="text-gray-400 hover:text-yellow-600"><Briefcase size={16} /></button>
                     <button onClick={() => handleConvertToCustomer(lead)} title="Convert to Customer" className="text-gray-400 hover:text-indigo-600"><UserPlus size={16} /></button>
                     <button onClick={() => {
                       const url = `https://wa.me/91${lead.phone}?text=Hi%20${encodeURIComponent(lead.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
@@ -790,6 +853,7 @@ const Leads = () => {
           </div>
         </div>
       </div>
+      {dealModalOpen && <ConvertLeadToDealModal lead={selectedLeadForDeal} onClose={() => { setDealModalOpen(false); fetchLeads(); }} />}
     </div>
   );
 };
