@@ -3768,11 +3768,17 @@ const InternTasksAdmin = () => {
   const [tasks, setTasks] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+  const [activeInterns, setActiveInterns] = useState([]);
   
   const [activeTab, setActiveTab] = useState('Tasks');
 
+  const fetchActiveInterns = async () => {
+    const { data } = await supabase.from('interns').select('id, name, intern_id').eq('status', 'Active').order('name');
+    setActiveInterns(data || []);
+  };
+
   const fetchTasks = async () => {
-    const { data } = await supabase.from('intern_tasks').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase.from('intern_tasks').select('*, interns(name, intern_id)').order('created_at', { ascending: false });
     setTasks(data || []);
   };
 
@@ -3790,20 +3796,24 @@ const InternTasksAdmin = () => {
     fetchTasks();
     fetchSubmissions();
     fetchAnnouncements();
+    fetchActiveInterns();
   }, []);
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const internId = fd.get('intern_id');
     const task = {
       title: fd.get('title'),
       description: fd.get('description'),
       deadline: fd.get('deadline') || null,
-      document_url: fd.get('document_url')
+      document_url: fd.get('document_url'),
+      intern_id: internId || null
     };
     await supabase.from('intern_tasks').insert([task]);
     e.target.reset();
-    showToast('Task assigned to interns');
+    const assignedIntern = activeInterns.find(i => i.id === internId);
+    showToast(assignedIntern ? `Task assigned to ${assignedIntern.name}` : 'Task created (unassigned)');
     fetchTasks();
   };
 
@@ -3840,6 +3850,13 @@ const InternTasksAdmin = () => {
               <h3 className="font-bold mb-4">Create New Task</h3>
               <form onSubmit={handleCreateTask} className="space-y-4">
                 <div><label className="block text-sm mb-1">Title *</label><input name="title" required className="w-full border p-2 rounded text-sm" /></div>
+                <div>
+                  <label className="block text-sm mb-1">Assign To *</label>
+                  <select name="intern_id" required className="w-full border p-2 rounded text-sm">
+                    <option value="">Select Intern...</option>
+                    {activeInterns.map(i => <option key={i.id} value={i.id}>{i.name} ({i.intern_id})</option>)}
+                  </select>
+                </div>
                 <div><label className="block text-sm mb-1">Deadline</label><input type="datetime-local" name="deadline" className="w-full border p-2 rounded text-sm" /></div>
                 <div><label className="block text-sm mb-1">Resource / Document URL</label><input name="document_url" type="url" className="w-full border p-2 rounded text-sm" /></div>
                 <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="3" className="w-full border p-2 rounded text-sm"></textarea></div>
@@ -3853,6 +3870,7 @@ const InternTasksAdmin = () => {
                     <h4 className="font-bold text-gray-900">{t.title}</h4>
                     <span className="text-sm text-gray-500">Deadline: {t.deadline ? new Date(t.deadline).toLocaleString() : 'No deadline'}</span>
                   </div>
+                  {t.interns && <p className="text-xs mt-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Assigned: {t.interns.name} ({t.interns.intern_id})</span></p>}
                   <p className="text-sm text-gray-600 mt-2">{t.description}</p>
                   {t.document_url && <a href={t.document_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline mt-2 inline-block">View Resource Document</a>}
                 </div>
@@ -3945,7 +3963,7 @@ const InternPortal = ({ internSession, setInternSession }) => {
     const { data: iData } = await supabase.from('interns').select('*').eq('id', internSession.id).single();
     if (iData) setInternDetails(iData);
 
-    const { data: tData } = await supabase.from('intern_tasks').select('*').order('deadline', { ascending: true });
+    const { data: tData } = await supabase.from('intern_tasks').select('*').eq('intern_id', internSession.id).order('deadline', { ascending: true });
     setTasks(tData || []);
     
     const { data: aData } = await supabase.from('intern_announcements').select('*').order('created_at', { ascending: false });
