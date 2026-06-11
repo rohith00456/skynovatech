@@ -2604,6 +2604,13 @@ const TicketDetailModal = ({ ticket, onClose, statusColors, priorityColors }) =>
   useEffect(() => { fetchComments(); }, [ticket.id]);
 
   const updateStatus = async (newStatus) => {
+    if (newStatus === 'Closed') {
+      await supabase.from('tickets').delete().eq('id', ticket.id);
+      logActivity(null, 'Ticket Closed and Deleted', 'ticket', ticket.id, ticket.subject);
+      showToast('Ticket closed and removed');
+      onClose();
+      return;
+    }
     setStatus(newStatus);
     const updatePayload = { status: newStatus };
     if (newStatus === 'Resolved') updatePayload.resolved_at = new Date().toISOString();
