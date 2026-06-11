@@ -425,6 +425,7 @@ const Sidebar = ({ currentRoute, setRoute }) => {
     { id: 'activities', label: 'Activities', icon: Activity },
     { id: 'projects', label: 'Projects', icon: Briefcase },
     { id: 'interns', label: 'Internships', icon: Users },
+    { id: 'website_forms', label: 'Website Forms', icon: FileText },
     { id: 'intern_tasks', label: 'Intern Tasks', icon: CheckSquare },
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'tickets', label: 'Support Tickets', icon: CheckSquare },
@@ -3394,6 +3395,72 @@ const InternPortal = ({ internSession, setInternSession }) => {
   );
 };
 
+// --- WEBSITE FORMS MODULE ---
+const WebsiteForms = () => {
+  const [activeTab, setActiveTab] = useState('Contact Leads');
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    setLoading(true);
+    let table = '';
+    if (activeTab === 'Contact Leads') table = 'lead_captures';
+    else if (activeTab === 'Quotes') table = 'quote_requests';
+    else if (activeTab === 'Internships') table = 'intern_applications';
+    else if (activeTab === 'Newsletter') table = 'newsletter_subscribers';
+
+    const { data: res } = await supabase.from(table).select('*').order('created_at', { ascending: false });
+    setData(res || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [activeTab]);
+
+  return (
+    <div className="p-6 h-full flex flex-col">
+      <h2 className="text-2xl font-bold mb-6">Website Submissions</h2>
+      <div className="flex border-b mb-6">
+        {['Contact Leads', 'Quotes', 'Internships', 'Newsletter'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+            {tab}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="overflow-x-auto flex-1 p-4">
+          {loading ? <div className="flex justify-center p-8"><Spinner /></div> : (
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  {activeTab === 'Contact Leads' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Subject</th><th className="p-4">Message</th></>}
+                  {activeTab === 'Quotes' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Service</th><th className="p-4">Details</th></>}
+                  {activeTab === 'Internships' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Domain</th><th className="p-4">College</th></>}
+                  {activeTab === 'Newsletter' && <><th className="p-4">Email</th><th className="p-4">Status</th></>}
+                  <th className="p-4 text-right">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(item => (
+                  <tr key={item.id} className="border-b hover:bg-gray-50">
+                    {activeTab === 'Contact Leads' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.phone}</td><td className="p-4">{item.subject}</td><td className="p-4">{item.message}</td></>}
+                    {activeTab === 'Quotes' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.phone}</td><td className="p-4">{item.main_service}</td><td className="p-4">{item.detailed_service} - {item.message}</td></>}
+                    {activeTab === 'Internships' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.contact}</td><td className="p-4">{item.domain}</td><td className="p-4">{item.college}</td></>}
+                    {activeTab === 'Newsletter' && <><td className="p-4">{item.email}</td><td className="p-4">{item.status}</td></>}
+                    <td className="p-4 text-right text-sm text-gray-500">{new Date(item.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {data.length === 0 && <tr><td colSpan="6" className="text-center p-8 text-gray-500">No data found.</td></tr>}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- APP COMPONENT ---
 
 export default function SkynovaCRM() {
@@ -3480,6 +3547,7 @@ export default function SkynovaCRM() {
       case 'quotations': return <Quotations />;
       case 'stipends': return <Stipends />;
       case 'projects': return <Projects />;
+      case 'website_forms': return <WebsiteForms />;
       case 'interns': return <InternsManagement />;
       case 'intern_tasks': return <InternTasksAdmin />;
       case 'invoices': return <Invoices />;
