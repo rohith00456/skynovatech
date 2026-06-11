@@ -3769,8 +3769,11 @@ const InternTasksAdmin = () => {
   const [submissions, setSubmissions] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [activeInterns, setActiveInterns] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [editingTask, setEditingTask] = useState(null);
+  const [assignMode, setAssignMode] = useState('individual');
   
-  const [activeTab, setActiveTab] = useState('Tasks');
+  const [activeTab, setActiveTab] = useState('Assign Task');
 
   const fetchActiveInterns = async () => {
     const { data } = await supabase.from('interns').select('id, name, intern_id').eq('status', 'Active').order('name');
@@ -3778,7 +3781,7 @@ const InternTasksAdmin = () => {
   };
 
   const fetchTasks = async () => {
-    const { data } = await supabase.from('intern_tasks').select('*, interns(name, intern_id)').order('created_at', { ascending: false });
+    const { data } = await supabase.from('intern_tasks').select('*, interns(name, intern_id), intern_teams(name)').order('created_at', { ascending: false });
     setTasks(data || []);
   };
 
@@ -3792,29 +3795,78 @@ const InternTasksAdmin = () => {
     setAnnouncements(data || []);
   };
 
+  const fetchTeams = async () => {
+    const { data } = await supabase.from('intern_teams').select('*, intern_team_members(*, interns(id, name, intern_id))').order('created_at', { ascending: false });
+    setTeams(data || []);
+  };
+
   useEffect(() => {
     fetchTasks();
     fetchSubmissions();
     fetchAnnouncements();
     fetchActiveInterns();
+    fetchTeams();
   }, []);
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const internId = fd.get('intern_id');
+    const teamId = fd.get('team_id');
     const task = {
       title: fd.get('title'),
       description: fd.get('description'),
       deadline: fd.get('deadline') || null,
       document_url: fd.get('document_url'),
-      intern_id: internId || null
+      intern_id: assignMode === 'individual' ? (internId || null) : null,
+      team_id: assignMode === 'team' ? (teamId || null) : null
     };
     await supabase.from('intern_tasks').insert([task]);
     e.target.reset();
-    const assignedIntern = activeInterns.find(i => i.id === internId);
-    showToast(assignedIntern ? `Task assigned to ${assignedIntern.name}` : 'Task created (unassigned)');
+    showToast('Task assigned successfully');
     fetchTasks();
+  };
+
+  const handleEditTask = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      title: fd.get('title'),
+      description: fd.get('description'),
+      deadline: fd.get('deadline') || null,
+      document_url: fd.get('document_url')
+    };
+    await supabase.from('intern_tasks').update(payload).eq('id', editingTask.id);
+    setEditingTask(null);
+    showToast('Task updated');
+    fetchTasks();
+  };
+
+  const handleDeleteTask = async (id) => {
+    await supabase.from('intern_tasks').delete().eq('id', id);
+    showToast('Task deleted');
+    fetchTasks();
+  };
+
+  const handleCreateTeam = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const teamName = fd.get('team_name');
+    const memberIds = fd.getAll('member_ids');
+    if (memberIds.length < 2) { showToast('Select at least 2 interns for a team', 'error'); return; }
+    const { data: team, error } = await supabase.from('intern_teams').insert([{ name: teamName }]).select().single();
+    if (error) { showToast(error.message, 'error'); return; }
+    const members = memberIds.map(mid => ({ team_id: team.id, intern_id: mid }));
+    await supabase.from('intern_team_members').insert(members);
+    e.target.reset();
+    showToast(`Team "${teamName}" created`);
+    fetchTeams();
+  };
+
+  const handleDeleteTeam = async (id) => {
+    await supabase.from('intern_teams').delete().eq('id', id);
+    showToast('Team deleted');
+    fetchTeams();
   };
 
   const handleCreateAnnouncement = async (e) => {
