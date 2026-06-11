@@ -1484,16 +1484,157 @@ const FollowUps = () => {
 };
 
 // 8. Quotations Module
+const AddQuoteModal = ({ onClose }) => {
+  const [customers, setCustomers] = useState([]);
+  const [form, setForm] = useState({
+    customer_id: '',
+    quote_number: 'QT-' + new Date().getTime().toString().slice(-6),
+    status: 'Draft',
+    expiry_date: '',
+    discount: 0,
+    tax_percentage: 18
+  });
+  const [items, setItems] = useState([{ id: Date.now(), description: '', quantity: 1, unit_price: 0, total: 0 }]);
+
+  useEffect(() => {
+    supabase.from('customers').select('id, name').then(({data}) => setCustomers(data || []));
+  }, []);
+
+  const calculateTotals = (currentItems, discount, taxPercentage) => {
+    const subtotal = currentItems.reduce((acc, item) => acc + (Number(item.quantity) * Number(item.unit_price)), 0);
+    const tax_amount = (subtotal - discount) * (taxPercentage / 100);
+    const grand_total = subtotal - discount + tax_amount;
+    return { subtotal, tax_amount, grand_total };
+  };
+
+  const handleItemChange = (id, field, value) => {
+    const newItems = items.map(item => {
+      if (item.id === id) {
+        const updated = { ...item, [field]: value };
+        updated.total = Number(updated.quantity || 0) * Number(updated.unit_price || 0);
+        return updated;
+      }
+      return item;
+    });
+    setItems(newItems);
+  };
+
+  const addItem = () => setItems([...items, { id: Date.now(), description: '', quantity: 1, unit_price: 0, total: 0 }]);
+  const removeItem = (id) => setItems(items.filter(i => i.id !== id));
+
+  const { subtotal, tax_amount, grand_total } = calculateTotals(items, form.discount, form.tax_percentage);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const payload = {
+      ...form,
+      items: items,
+      subtotal,
+      tax: tax_amount,
+      grand_total
+    };
+    await supabase.from('quotations').insert([payload]);
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Create Quotation" maxWidth="max-w-4xl">
+      <form onSubmit={handleSave} className="space-y-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Customer *</label>
+            <select required value={form.customer_id} onChange={e => setForm({...form, customer_id: e.target.value})} className="w-full border p-2 rounded">
+              <option value="">Select...</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Quote Number</label>
+            <input required type="text" value={form.quote_number} onChange={e => setForm({...form, quote_number: e.target.value})} className="w-full border p-2 rounded" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Expiry Date</label>
+            <input type="date" value={form.expiry_date} onChange={e => setForm({...form, expiry_date: e.target.value})} className="w-full border p-2 rounded" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Status</label>
+            <select value={form.status} onChange={e => setForm({...form, status: e.target.value})} className="w-full border p-2 rounded">
+              <option value="Draft">Draft</option>
+              <option value="Sent">Sent</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="font-semibold text-gray-700">Line Items</h4>
+            <button type="button" onClick={addItem} className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:text-blue-800"><Plus size={14}/> Add Item</button>
+          </div>
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="p-3 w-1/2">Description</th>
+                  <th className="p-3">Qty</th>
+                  <th className="p-3">Unit Price (₹)</th>
+                  <th className="p-3">Total (₹)</th>
+                  <th className="p-3 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, index) => (
+                  <tr key={item.id} className="border-b">
+                    <td className="p-2"><input required type="text" value={item.description} onChange={e => handleItemChange(item.id, 'description', e.target.value)} className="w-full border p-1.5 rounded" placeholder="Item description..." /></td>
+                    <td className="p-2"><input required type="number" min="1" value={item.quantity} onChange={e => handleItemChange(item.id, 'quantity', e.target.value)} className="w-full border p-1.5 rounded" /></td>
+                    <td className="p-2"><input required type="number" min="0" step="0.01" value={item.unit_price} onChange={e => handleItemChange(item.id, 'unit_price', e.target.value)} className="w-full border p-1.5 rounded" /></td>
+                    <td className="p-2 font-medium bg-gray-50">{item.total.toFixed(2)}</td>
+                    <td className="p-2 text-center">
+                      {items.length > 1 && <button type="button" onClick={() => removeItem(item.id)} className="text-red-500 hover:text-red-700"><Trash size={16}/></button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <div className="w-64 space-y-3 bg-gray-50 p-4 rounded-lg border">
+            <div className="flex justify-between text-sm"><span>Subtotal:</span> <span className="font-medium">₹{subtotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-sm items-center">
+              <span>Discount (₹):</span> 
+              <input type="number" min="0" value={form.discount} onChange={e => setForm({...form, discount: Number(e.target.value)})} className="w-20 border p-1 rounded text-right" />
+            </div>
+            <div className="flex justify-between text-sm items-center">
+              <span>Tax (%):</span> 
+              <input type="number" min="0" value={form.tax_percentage} onChange={e => setForm({...form, tax_percentage: Number(e.target.value)})} className="w-16 border p-1 rounded text-right" />
+            </div>
+            <div className="flex justify-between text-sm text-gray-500"><span>Tax Amount:</span> <span>₹{tax_amount.toFixed(2)}</span></div>
+            <div className="pt-2 border-t flex justify-between font-bold text-lg"><span>Total:</span> <span>₹{grand_total.toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-4 border-t">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium">Cancel</button>
+          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium">Save Quotation</button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 const Quotations = () => {
   const [quotations, setQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isAddModalOpen, setAddModalOpen] = useState(false);
+
+  const fetchQuotes = async () => {
+    const { data } = await supabase.from('quotations').select('*, customers(name)').order('created_at', { ascending: false });
+    setQuotations(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchQuotes = async () => {
-      const { data } = await supabase.from('quotations').select('*, customers(name)').order('created_at', { ascending: false });
-      setQuotations(data || []);
-      setLoading(false);
-    };
     fetchQuotes();
   }, []);
 
@@ -1501,7 +1642,7 @@ const Quotations = () => {
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Quotations</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setAddModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> New Quote
         </button>
       </div>
@@ -1537,6 +1678,7 @@ const Quotations = () => {
           </tbody>
         </table>
       </div>
+      {isAddModalOpen && <AddQuoteModal onClose={() => { setAddModalOpen(false); fetchQuotes(); }} />}
     </div>
   );
 };
@@ -4773,4 +4915,5 @@ export default function SkynovaCRM() {
     </div>
   );
 }
+
 
