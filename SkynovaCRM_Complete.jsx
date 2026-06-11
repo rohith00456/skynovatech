@@ -3299,13 +3299,14 @@ const InternsManagement = () => {
                   <th className="p-4 font-medium text-gray-600">User ID</th>
                   <th className="p-4 font-medium text-gray-600">Name</th>
                   <th className="p-4 font-medium text-gray-600">Email</th>
+                  <th className="p-4 font-medium text-gray-600">Stipend</th>
                   <th className="p-4 font-medium text-gray-600">Status</th>
                   <th className="p-4 font-medium text-gray-600">Expiry Date</th>
                   <th className="p-4 font-medium text-gray-600 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {loadingInterns ? <tr><td colSpan="6" className="text-center p-8"><Spinner /></td></tr> :
+                {loadingInterns ? <tr><td colSpan="7" className="text-center p-8"><Spinner /></td></tr> :
                  interns.map(i => {
                    const isExpired = i.expiry_date && new Date(i.expiry_date) < new Date();
                    const displayStatus = isExpired && i.status === 'Active' ? 'Expired' : i.status;
@@ -3314,6 +3315,14 @@ const InternsManagement = () => {
                        <td className="p-4 font-bold text-gray-800">{i.intern_id}</td>
                        <td className="p-4 font-medium">{i.name}</td>
                        <td className="p-4">{i.email}</td>
+                       <td className="p-4">
+                         {i.stipend_amount > 0 ? (
+                           <div className="flex items-center gap-2">
+                             <span className="font-bold text-gray-800">₹{i.stipend_amount}</span>
+                             <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-800 font-medium border border-yellow-200">Pending</span>
+                           </div>
+                         ) : <span className="text-gray-400">-</span>}
+                       </td>
                        <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(displayStatus)}`}>{displayStatus}</span></td>
                        <td className="p-4 text-sm">
                          {i.expiry_date ? new Date(i.expiry_date).toLocaleString() : 'Never'}
