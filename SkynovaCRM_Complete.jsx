@@ -1516,13 +1516,14 @@ const Stipends = () => {
     
     if (data) {
       setStipends(data);
-      let p = 0, u = 0, pt = 0;
+      let p = 0, u = 0, pt = 0, pd = 0;
       data.forEach(s => {
         if (s.status === 'Paid') p += Number(s.amount);
         else if (s.status === 'Unpaid') u += Number(s.amount);
         else if (s.status === 'Partial') pt += Number(s.amount);
+        else if (s.status === 'Pending') pd += Number(s.amount);
       });
-      setSummary({ paid: p, unpaid: u, partial: pt });
+      setSummary({ paid: p, unpaid: u, partial: pt, pending: pd });
     }
     setLoading(false);
   };
@@ -1577,10 +1578,14 @@ const Stipends = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm">
           <p className="text-sm text-gray-500">Total Paid</p>
           <p className="text-2xl font-bold text-green-700">₹{summary.paid.toLocaleString()}</p>
+        </div>
+        <div className="bg-white p-4 rounded-xl border-l-4 border-yellow-400 shadow-sm">
+          <p className="text-sm text-gray-500">Total Pending</p>
+          <p className="text-2xl font-bold text-yellow-600">₹{(summary.pending || 0).toLocaleString()}</p>
         </div>
         <div className="bg-white p-4 rounded-xl border-l-4 border-red-500 shadow-sm">
           <p className="text-sm text-gray-500">Total Unpaid</p>
@@ -1645,12 +1650,14 @@ const Stipends = () => {
                     <select 
                       className={`text-xs rounded-full px-2 py-1 border-none font-medium ${
                         stip.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                        stip.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
                         stip.status === 'Unpaid' ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800'
                       }`}
                       value={stip.status}
                       onChange={e => updateStatus(stip.id, e.target.value)}
                     >
                       <option value="Paid">Paid</option>
+                      <option value="Pending">Pending</option>
                       <option value="Unpaid">Unpaid</option>
                       <option value="Partial">Partial</option>
                       <option value="On Hold">On Hold</option>
