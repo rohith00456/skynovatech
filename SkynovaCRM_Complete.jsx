@@ -1205,16 +1205,66 @@ const SalesPipeline = () => {
 };
 
 // 6. Tasks Module
+const AddTaskModal = ({ onClose }) => {
+  const [formData, setFormData] = useState({ title: '', assignee_name: '', assignee_role: 'Employee', priority: 'Medium' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('tasks').insert([formData]);
+    if (error) alert("Error saving task: " + error.message);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add Task</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Task Title (e.g. Call Client)" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          
+          <div className="flex gap-2">
+            <select value={formData.assignee_role} onChange={e => setFormData({...formData, assignee_role: e.target.value})} className="border p-2 rounded outline-none focus:border-blue-500 w-1/3">
+              <option value="Employee">Employee</option>
+              <option value="Intern">Intern</option>
+            </select>
+            <input required type="text" placeholder="Assignee Name" value={formData.assignee_name} onChange={e => setFormData({...formData, assignee_name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500 flex-1" />
+          </div>
+
+          <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            <option value="High">High Priority</option>
+            <option value="Medium">Medium Priority</option>
+            <option value="Low">Low Priority</option>
+          </select>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Add Task'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const Tasks = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('tasks').select('*, assignee:assignee_id(name)').order('created_at', { ascending: false });
+    setTasks(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const { data } = await supabase.from('tasks').select('*, assignee:assignee_id(name)').order('due_date', { ascending: true });
-      setTasks(data || []);
-      setLoading(false);
-    };
     fetchTasks();
   }, []);
 
@@ -1224,11 +1274,17 @@ const Tasks = () => {
     await supabase.from('tasks').update({ status: newStatus }).eq('id', id);
   };
 
+  const deleteTask = async (id) => {
+    if (!confirm("Are you sure you want to delete this task?")) return;
+    await supabase.from('tasks').delete().eq('id', id);
+    fetchTasks();
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Tasks</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> Add Task
         </button>
       </div>
@@ -1244,54 +1300,139 @@ const Tasks = () => {
                   <h4 className={`font-medium ${task.status === 'Completed' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{task.title}</h4>
                   <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
                     {task.due_date && <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(task.due_date).toLocaleDateString()}</span>}
-                    {task.assignee?.name && <span className="flex items-center gap-1"><Users size={12}/> {task.assignee.name}</span>}
+                    {(task.assignee_name || task.assignee?.name) && <span className="flex items-center gap-1"><Users size={12}/> {task.assignee_name || task.assignee?.name} ({task.assignee_role || 'Employee'})</span>}
                     {task.priority && <span className={`px-2 py-0.5 rounded-full ${task.priority === 'High' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>{task.priority}</span>}
                   </div>
                 </div>
+                <button onClick={() => deleteTask(task.id)} className="text-gray-300 hover:text-red-500 ml-auto mt-2">
+                  <Trash size={16} />
+                </button>
               </div>
             ))}
           </div>
         )}
       </div>
+      {isModalOpen && <AddTaskModal onClose={() => { setIsModalOpen(false); fetchTasks(); }} />}
     </div>
   );
 };
+
+const AddFollowUpModal = ({ onClose }) => {
+  const [formData, setFormData] = useState({ contact_name: '', assignee_name: '', assignee_role: 'Employee', related_lead_name: '', scheduled_date: '', scheduled_time: '', type: 'Call', status: 'Pending' });
+  const [saving, setSaving] = useState(false);
+  const [leads, setLeads] = useState([]);
+
+  useEffect(() => {
+    supabase.from('leads').select('name').order('name').then(({data}) => setLeads(data || []));
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('followups').insert([formData]);
+    if (error) alert("Error scheduling follow-up: " + error.message);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Schedule Follow-Up</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Contact Name (Who are you contacting?)" value={formData.contact_name} onChange={e => setFormData({...formData, contact_name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          
+          <div className="flex gap-2">
+            <select value={formData.assignee_role} onChange={e => setFormData({...formData, assignee_role: e.target.value})} className="border p-2 rounded outline-none focus:border-blue-500 w-1/3">
+              <option value="Employee">Employee</option>
+              <option value="Intern">Intern</option>
+            </select>
+            <input required type="text" placeholder="Assignee Name (Who will do this?)" value={formData.assignee_name} onChange={e => setFormData({...formData, assignee_name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500 flex-1" />
+          </div>
+
+          <div className="flex gap-2">
+            <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="border p-2 rounded outline-none focus:border-blue-500 w-1/3">
+              <option value="Call">Call</option>
+              <option value="Email">Email</option>
+              <option value="Meeting">Meeting</option>
+            </select>
+            <select required value={formData.related_lead_name} onChange={e => setFormData({...formData, related_lead_name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500 flex-1">
+              <option value="">Select Lead...</option>
+              {leads.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <input required type="date" value={formData.scheduled_date} onChange={e => setFormData({...formData, scheduled_date: e.target.value})} className="w-1/2 border p-2 rounded outline-none focus:border-blue-500" />
+            <input required type="time" value={formData.scheduled_time} onChange={e => setFormData({...formData, scheduled_time: e.target.value})} className="w-1/2 border p-2 rounded outline-none focus:border-blue-500" />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Scheduling...' : 'Schedule'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // 7. Follow-Ups Module
 const FollowUps = () => {
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchFollowups = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('followups').select('*').order('scheduled_date', { ascending: true }).limit(50);
+    setFollowups(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchFollowups = async () => {
-      const { data } = await supabase.from('followups').select('*, assigned_to(name)').order('scheduled_date', { ascending: true }).limit(50);
-      setFollowups(data || []);
-      setLoading(false);
-    };
     fetchFollowups();
   }, []);
+
+  const deleteFollowup = async (id) => {
+    if (!confirm("Delete this follow-up?")) return;
+    await supabase.from('followups').delete().eq('id', id);
+    fetchFollowups();
+  };
 
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Follow-Ups</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> Schedule
         </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? <Spinner /> : followups.map(f => (
-          <div key={f.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4 items-start">
-            <div className={`p-3 rounded-lg ${f.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-              <Calendar size={20} />
+          <div key={f.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4 items-start relative group">
+            <button onClick={() => deleteFollowup(f.id)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Trash size={16} />
+            </button>
+            <div className={`p-3 rounded-lg ${f.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+              <Phone size={20} />
             </div>
             <div>
-              <h4 className="font-semibold">{f.type || 'Meeting'}</h4>
-              <p className="text-sm text-gray-600">Module: {f.related_module}</p>
-              <p className="text-xs text-gray-500 mt-1">Date: {new Date(f.scheduled_date).toLocaleDateString()}</p>
+              <h4 className="font-semibold text-gray-900">{f.type || 'Follow Up'} - {f.related_lead_name || f.related_module || 'Lead'}</h4>
+              <p className="text-sm text-gray-600 mt-1">Contact: <strong>{f.contact_name || '-'}</strong></p>
+              <p className="text-sm text-gray-600">Assigned To: {f.assignee_name || f.assigned_to?.name} ({f.assignee_role || 'Employee'})</p>
+              <div className="flex items-center gap-3 mt-2 text-xs text-gray-500 font-medium">
+                <span className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded"><Calendar size={12}/> {f.scheduled_date ? new Date(f.scheduled_date).toLocaleDateString() : '-'}</span>
+                {f.scheduled_time && <span className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded"><Clock size={12}/> {f.scheduled_time}</span>}
+              </div>
             </div>
           </div>
         ))}
       </div>
+      {isModalOpen && <AddFollowUpModal onClose={() => { setIsModalOpen(false); fetchFollowups(); }} />}
     </div>
   );
 };
