@@ -1009,7 +1009,10 @@ const Customers = () => {
               </div>
               <div>
                 <label className="block text-sm mb-1">Assigned To</label>
-                <input type="text" value={projectForm.assigned_to} onChange={e => setProjectForm({...projectForm, assigned_to: e.target.value})} placeholder="Type name..." className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500" />
+                <select value={projectForm.assigned_to} onChange={e => setProjectForm({...projectForm, assigned_to: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500">
+                  <option value="">Unassigned</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button type="button" onClick={() => setIsProjectModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
@@ -1904,7 +1907,7 @@ const Projects = () => {
 
   const fetchProjects = async () => {
     setLoading(true);
-    const { data } = await supabase.from('projects').select('*, customers(name)').order('created_at', { ascending: false });
+    const { data } = await supabase.from('projects').select('*, customers(name), users!projects_assigned_to_fkey(name)').order('created_at', { ascending: false });
     setProjects(data || []);
     setLoading(false);
   };
@@ -1965,8 +1968,8 @@ const Projects = () => {
               <span className={`px-2 py-1 rounded-full text-xs ${statusColors[p.status] || 'bg-gray-100'}`}>{p.status}</span>
             </div>
             <p className="text-sm text-gray-500 mb-2">{p.customers?.name}</p>
-            <div className="flex justify-between items-center text-sm text-gray-500 mb-4">
-              <span>{p.assigned_to || 'Unassigned'}</span>
+            <div className="flex justify-between text-xs text-gray-500 mt-4">
+              <span>{p.users?.name || 'Unassigned'}</span>
               <span>Due: {p.expected_delivery ? new Date(p.expected_delivery).toLocaleDateString() : 'N/A'}</span>
             </div>
           </div>
@@ -1992,7 +1995,10 @@ const Projects = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div><label className="block text-sm mb-1">Assigned To</label>
-              <input type="text" name="assigned_to" placeholder="Type name..." className="w-full border p-2 rounded" />
+              <select name="assigned_to" className="w-full border p-2 rounded">
+                <option value="">Select User...</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
             </div>
             <div><label className="block text-sm mb-1">Status</label>
               <select name="status" defaultValue="Kickoff" className="w-full border p-2 rounded">
@@ -2459,7 +2465,7 @@ const SupportTickets = () => {
 
   const fetchTickets = async () => {
     setLoading(true);
-    let query = supabase.from('tickets').select('*, customers(name), projects(name)').order('created_at', { ascending: false });
+    let query = supabase.from('tickets').select('*, customers(name), users!tickets_assigned_to_fkey(name), projects(name)').order('created_at', { ascending: false });
     if (filters.status) query = query.eq('status', filters.status);
     if (filters.priority) query = query.eq('priority', filters.priority);
     const { data } = await query;
@@ -2544,7 +2550,7 @@ const SupportTickets = () => {
                    <td className="p-4 text-sm"><div className="font-medium text-gray-800">{t.customers?.name}</div><div className="text-gray-500">{t.projects?.name}</div></td>
                    <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${priorityColors[t.priority]}`}>{t.priority}</span></td>
                    <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${statusColors[t.status]}`}>{t.status}</span></td>
-                   <td className="p-4 text-sm text-gray-600">{t.assigned_to || 'Unassigned'}</td>
+                   <td className="p-4 text-sm text-gray-600">{t.users?.name || 'Unassigned'}</td>
                    <td className="p-4 text-sm text-gray-600">{new Date(t.created_at).toLocaleDateString()}</td>
                    <td className="p-4">
                      <button onClick={() => setSelectedTicket(t)} className="text-blue-600 hover:bg-blue-50 px-3 py-1 rounded text-sm font-medium border border-blue-200">View</button>
@@ -2578,7 +2584,10 @@ const SupportTickets = () => {
               </select>
             </div>
             <div><label className="block text-sm mb-1">Assigned To</label>
-              <input type="text" name="assigned_to" value={ticketForm.assigned_to} onChange={e => setTicketForm({...ticketForm, assigned_to: e.target.value})} placeholder="Type name..." className="w-full border p-2 rounded text-sm" />
+              <select name="assigned_to" className="w-full border p-2 rounded text-sm">
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
             </div>
           </div>
           <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="4" className="w-full border p-2 rounded text-sm"></textarea></div>
