@@ -3401,14 +3401,17 @@ const WebsiteForms = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const getTableName = (tab) => {
+    if (tab === 'Contact Leads') return 'lead_captures';
+    if (tab === 'Quotes') return 'quote_requests';
+    if (tab === 'Internships') return 'intern_applications';
+    if (tab === 'Newsletter') return 'newsletter_subscribers';
+    return '';
+  };
+
   const fetchData = async () => {
     setLoading(true);
-    let table = '';
-    if (activeTab === 'Contact Leads') table = 'lead_captures';
-    else if (activeTab === 'Quotes') table = 'quote_requests';
-    else if (activeTab === 'Internships') table = 'intern_applications';
-    else if (activeTab === 'Newsletter') table = 'newsletter_subscribers';
-
+    const table = getTableName(activeTab);
     const { data: res } = await supabase.from(table).select('*').order('created_at', { ascending: false });
     setData(res || []);
     setLoading(false);
@@ -3418,40 +3421,171 @@ const WebsiteForms = () => {
     fetchData();
   }, [activeTab]);
 
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this record?')) return;
+    const table = getTableName(activeTab);
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    if (error) alert('Error deleting record: ' + error.message);
+    else fetchData();
+  };
+
+  const handleUpdateStatus = async (id, newStatus) => {
+    const table = getTableName(activeTab);
+    const updateData = activeTab === 'Contact Leads' ? { is_converted: newStatus === 'Converted' } : { status: newStatus };
+    const { error } = await supabase.from(table).update(updateData).eq('id', id);
+    if (error) alert('Error updating status: ' + error.message);
+    else fetchData();
+  };
+
+  const handleConvertToLead = async (item) => {
+    const leadData = {
+      name: item.name,
+      email: item.email,
+      phone: item.phone || '',
+      company: 'Website Inquiry',
+      source: activeTab === 'Contact Leads' ? 'Website Contact' : 'Website Quote',
+      status: 'New',
+      priority: 'Medium',
+      notes: activeTab === 'Contact Leads' ? `Subject: ${item.subject}\nMessage: ${item.message}` : `Service: ${item.main_service}\nDetails: ${item.detailed_service}\nMessage: ${item.message}`
+    };
+
+    const { error } = await supabase.from('leads').insert([leadData]);
+    if (error) {
+      alert('Error creating lead: ' + error.message);
+    } else {
+      alert('Successfully converted to CRM Lead!');
+      handleUpdateStatus(item.id, 'Converted');
+    }
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
-      <h2 className="text-2xl font-bold mb-6">Website Submissions</h2>
-      <div className="flex border-b mb-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Website Submissions</h2>
+        <button onClick={fetchData} className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+          <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+        </button>
+      </div>
+      <div className="flex border-b mb-6 overflow-x-auto">
         {['Contact Leads', 'Quotes', 'Internships', 'Newsletter'].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
             {tab}
           </button>
         ))}
       </div>
       <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div className="overflow-x-auto flex-1 p-4">
-          {loading ? <div className="flex justify-center p-8"><Spinner /></div> : (
-            <table className="w-full text-left border-collapse">
+          {loading ? <div className="flex justify-center p-8"><RefreshCw className="w-8 h-8 animate-spin text-blue-600" /></div> : (
+            <table className="w-full text-left border-collapse min-w-max">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {activeTab === 'Contact Leads' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Subject</th><th className="p-4">Message</th></>}
-                  {activeTab === 'Quotes' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Service</th><th className="p-4">Details</th></>}
-                  {activeTab === 'Internships' && <><th className="p-4">Name</th><th className="p-4">Email</th><th className="p-4">Phone</th><th className="p-4">Domain</th><th className="p-4">College</th></>}
+                  {activeTab === 'Contact Leads' && <><th className="p-4">Name</th><th className="p-4">Contact Info</th><th className="p-4">Message Details</th><th className="p-4">Status</th></>}
+                  {activeTab === 'Quotes' && <><th className="p-4">Name</th><th className="p-4">Contact Info</th><th className="p-4">Service Required</th><th className="p-4">Status</th></>}
+                  {activeTab === 'Internships' && <><th className="p-4">Applicant</th><th className="p-4">Contact Info</th><th className="p-4">Education & Domain</th><th className="p-4">Status</th></>}
                   {activeTab === 'Newsletter' && <><th className="p-4">Email</th><th className="p-4">Status</th></>}
-                  <th className="p-4 text-right">Date</th>
+                  <th className="p-4">Date</th>
+                  <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {data.map(item => (
-                  <tr key={item.id} className="border-b hover:bg-gray-50">
-                    {activeTab === 'Contact Leads' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.phone}</td><td className="p-4">{item.subject}</td><td className="p-4">{item.message}</td></>}
-                    {activeTab === 'Quotes' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.phone}</td><td className="p-4">{item.main_service}</td><td className="p-4">{item.detailed_service} - {item.message}</td></>}
-                    {activeTab === 'Internships' && <><td className="p-4">{item.name}</td><td className="p-4">{item.email}</td><td className="p-4">{item.contact}</td><td className="p-4">{item.domain}</td><td className="p-4">{item.college}</td></>}
-                    {activeTab === 'Newsletter' && <><td className="p-4">{item.email}</td><td className="p-4">{item.status}</td></>}
-                    <td className="p-4 text-right text-sm text-gray-500">{new Date(item.created_at).toLocaleString()}</td>
+                  <tr key={item.id} className="border-b hover:bg-gray-50 align-top">
+                    {/* Contact Leads */}
+                    {activeTab === 'Contact Leads' && <>
+                      <td className="p-4 font-medium">{item.name}</td>
+                      <td className="p-4 text-sm text-gray-600">
+                        <div>{item.email}</div>
+                        <div>{item.phone}</div>
+                      </td>
+                      <td className="p-4 text-sm">
+                        <div className="font-semibold text-gray-900">{item.subject}</div>
+                        <div className="text-gray-600 max-w-xs truncate" title={item.message}>{item.message}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.is_converted ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                          {item.is_converted ? 'Converted' : 'New'}
+                        </span>
+                      </td>
+                    </>}
+                    
+                    {/* Quotes */}
+                    {activeTab === 'Quotes' && <>
+                      <td className="p-4 font-medium">{item.name}</td>
+                      <td className="p-4 text-sm text-gray-600">
+                        <div>{item.email}</div>
+                        <div>{item.phone}</div>
+                      </td>
+                      <td className="p-4 text-sm">
+                        <div className="font-semibold text-gray-900">{item.main_service}</div>
+                        <div className="text-gray-600 max-w-xs truncate" title={item.message}>{item.detailed_service} - {item.message}</div>
+                      </td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'Converted' ? 'bg-green-100 text-green-800' : item.status === 'Contacted' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                          {item.status || 'New'}
+                        </span>
+                      </td>
+                    </>}
+
+                    {/* Internships */}
+                    {activeTab === 'Internships' && <>
+                      <td className="p-4 font-medium">{item.name}</td>
+                      <td className="p-4 text-sm text-gray-600">
+                        <div>{item.email}</div>
+                        <div>{item.contact}</div>
+                      </td>
+                      <td className="p-4 text-sm">
+                        <div className="font-semibold text-gray-900">{item.domain}</div>
+                        <div className="text-gray-600">{item.college}</div>
+                      </td>
+                      <td className="p-4">
+                        <select 
+                          value={item.status || 'Pending'} 
+                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 ${item.status === 'Reviewed' ? 'bg-blue-100 text-blue-800' : item.status === 'Rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Reviewed">Reviewed</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </td>
+                    </>}
+
+                    {/* Newsletter */}
+                    {activeTab === 'Newsletter' && <>
+                      <td className="p-4 font-medium">{item.email}</td>
+                      <td className="p-4">
+                         <select 
+                          value={item.status || 'Subscribed'} 
+                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 ${item.status === 'Unsubscribed' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}
+                        >
+                          <option value="Subscribed">Subscribed</option>
+                          <option value="Unsubscribed">Unsubscribed</option>
+                        </select>
+                      </td>
+                    </>}
+
+                    <td className="p-4 text-sm text-gray-500 whitespace-nowrap">{new Date(item.created_at).toLocaleDateString()}</td>
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        {(activeTab === 'Contact Leads' || activeTab === 'Quotes') && (
+                          <button 
+                            onClick={() => handleConvertToLead(item)} 
+                            title="Add to CRM Leads"
+                            disabled={activeTab === 'Contact Leads' ? item.is_converted : item.status === 'Converted'}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
+                          >
+                            <CheckCircle className="w-5 h-5" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(item.id)} title="Delete Record" className="p-1 text-red-600 hover:bg-red-50 rounded">
+                          <Trash className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="6" className="text-center p-8 text-gray-500">No data found.</td></tr>}
+                {data.length === 0 && <tr><td colSpan="7" className="text-center p-8 text-gray-500">No submissions found for {activeTab}.</td></tr>}
               </tbody>
             </table>
           )}
