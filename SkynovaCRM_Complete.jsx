@@ -6,7 +6,7 @@ import {
 import { 
   Search, Bell, Menu, X, Home, Users, Briefcase, Phone, BarChart2, CheckSquare, 
   Calendar, FileText, DollarSign, Activity, Settings, Plus, Filter, Download, 
-  ChevronDown, ChevronRight, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut, Send, Mail
+  ChevronDown, ChevronRight, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut, Send, Mail, UserPlus
 } from 'lucide-react';
 import { jsPDF } from 'https://esm.sh/jspdf';
 import html2canvas from 'https://esm.sh/html2canvas';
@@ -697,6 +697,30 @@ const Leads = () => {
     fetchLeads();
   };
 
+  const handleConvertToCustomer = async (lead) => {
+    if (!confirm(`Convert ${lead.name} to a Customer? This will remove them from Leads.`)) return;
+    
+    // 1. Insert into customers
+    const { error: insertError } = await supabase.from('customers').insert([{
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      company: lead.company,
+      status: 'Active'
+    }]);
+
+    if (insertError) {
+      showToast('Error converting lead', 'error');
+      return;
+    }
+
+    // 2. Delete from leads
+    await supabase.from('leads').delete().eq('id', lead.id);
+    await logActivity(null, 'Converted Lead to Customer', 'lead', lead.id, lead.name);
+    showToast('Successfully converted to Customer');
+    fetchLeads();
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
@@ -744,6 +768,7 @@ const Leads = () => {
                   <td className="p-4 text-gray-600">{lead.users?.name || 'Unassigned'}</td>
                   <td className="p-4 text-gray-600 text-sm">{new Date(lead.created_at).toLocaleDateString()}</td>
                   <td className="p-4 flex gap-2">
+                    <button onClick={() => handleConvertToCustomer(lead)} title="Convert to Customer" className="text-gray-400 hover:text-indigo-600"><UserPlus size={16} /></button>
                     <button onClick={() => {
                       const url = `https://wa.me/91${lead.phone}?text=Hi%20${encodeURIComponent(lead.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
                       window.open(url, '_blank');
@@ -770,16 +795,58 @@ const Leads = () => {
 };
 
 // 3. Customers Module
+const AddCustomerModal = ({ onClose }) => {
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', company: '', status: 'Active' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('customers').insert([formData]);
+    if (error) alert("Error: " + error.message);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add Customer</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Customer Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="email" placeholder="Email Address" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="text" placeholder="Phone Number" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="text" placeholder="Company Name" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+          </select>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save Customer'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const Customers = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchCust = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('customers').select('*, users(name)').order('created_at', { ascending: false }).limit(50);
+    setCustomers(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchCust = async () => {
-      const { data } = await supabase.from('customers').select('*, users(name)').order('created_at', { ascending: false }).limit(50);
-      setCustomers(data || []);
-      setLoading(false);
-    };
     fetchCust();
   }, []);
 
@@ -787,7 +854,7 @@ const Customers = () => {
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Customers</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> Add Customer
         </button>
       </div>
@@ -817,20 +884,67 @@ const Customers = () => {
           </div>
         ))}
       </div>
+      {isModalOpen && <AddCustomerModal onClose={() => { setIsModalOpen(false); fetchCust(); }} />}
     </div>
   );
 };
-// 4. Contacts Module
+const AddContactModal = ({ onClose }) => {
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', department: '', customer_id: '' });
+  const [saving, setSaving] = useState(false);
+  const [customerList, setCustomerList] = useState([]);
+
+  useEffect(() => {
+    supabase.from('customers').select('id, name').order('name').then(({data}) => setCustomerList(data || []));
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('contacts').insert([formData]);
+    if (error) alert("Error: " + error.message);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add Contact</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Contact Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="email" placeholder="Email Address" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="text" placeholder="Phone Number" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input type="text" placeholder="Department / Job Title" value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <select required value={formData.customer_id} onChange={e => setFormData({...formData, customer_id: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            <option value="">Select Customer...</option>
+            {customerList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save Contact'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const Contacts = () => {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const fetchContacts = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('contacts').select('*, customers(name)').order('created_at', { ascending: false }).limit(50);
+    setContacts(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchContacts = async () => {
-      const { data } = await supabase.from('contacts').select('*, customers(name)').order('created_at', { ascending: false }).limit(50);
-      setContacts(data || []);
-      setLoading(false);
-    };
     fetchContacts();
   }, []);
 
@@ -838,7 +952,7 @@ const Contacts = () => {
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Contacts</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> Add Contact
         </button>
       </div>
@@ -868,6 +982,53 @@ const Contacts = () => {
           </tbody>
         </table>
       </div>
+      {isModalOpen && <AddContactModal onClose={() => { setIsModalOpen(false); fetchContacts(); }} />}
+    </div>
+  );
+};
+
+const AddDealModal = ({ onClose }) => {
+  const [formData, setFormData] = useState({ name: '', value: '', stage: 'Lead In', customer_id: '' });
+  const [saving, setSaving] = useState(false);
+  const [customerList, setCustomerList] = useState([]);
+  const stages = ['Lead In', 'Contact Made', 'Demo Scheduled', 'Proposal Sent', 'Negotiation', 'Closed Won', 'Closed Lost'];
+
+  useEffect(() => {
+    supabase.from('customers').select('id, name').order('name').then(({data}) => setCustomerList(data || []));
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const { error } = await supabase.from('deals').insert([formData]);
+    if (error) alert("Error: " + error.message);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold">Add Deal</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input required type="text" placeholder="Deal Name (e.g. Website Redesign)" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <input required type="number" placeholder="Deal Value (₹)" value={formData.value} onChange={e => setFormData({...formData, value: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500" />
+          <select required value={formData.customer_id} onChange={e => setFormData({...formData, customer_id: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            <option value="">Select Customer...</option>
+            {customerList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={formData.stage} onChange={e => setFormData({...formData, stage: e.target.value})} className="w-full border p-2 rounded outline-none focus:border-blue-500">
+            {stages.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? 'Saving...' : 'Save Deal'}</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };
@@ -876,14 +1037,17 @@ const Contacts = () => {
 const SalesPipeline = () => {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const stages = ['Lead In', 'Contact Made', 'Demo Scheduled', 'Proposal Sent', 'Negotiation', 'Closed Won', 'Closed Lost'];
 
+  const fetchDeals = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('deals').select('*, users(name), customers(name)').order('updated_at', { ascending: false });
+    setDeals(data || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchDeals = async () => {
-      const { data } = await supabase.from('deals').select('*, users(name), customers(name)').order('updated_at', { ascending: false });
-      setDeals(data || []);
-      setLoading(false);
-    };
     fetchDeals();
   }, []);
 
@@ -897,7 +1061,7 @@ const SalesPipeline = () => {
     <div className="p-6 h-full flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-2xl font-bold">Sales Pipeline</h2>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
           <Plus size={16} /> Add Deal
         </button>
       </div>
@@ -935,6 +1099,7 @@ const SalesPipeline = () => {
           </div>
         ))}
       </div>
+      {isModalOpen && <AddDealModal onClose={() => { setIsModalOpen(false); fetchDeals(); }} />}
     </div>
   );
 };
