@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
@@ -6,7 +6,7 @@ import {
 import { 
   Search, Bell, Menu, X, Home, Users, Briefcase, Phone, BarChart2, CheckSquare, 
   Calendar, FileText, DollarSign, Activity, Settings, Plus, Filter, Download, 
-  ChevronDown, ChevronRight, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut, Send, Mail, UserPlus
+  ChevronDown, ChevronRight, ChevronLeft, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut, Send, Mail, UserPlus
 } from 'lucide-react';
 import { jsPDF } from 'https://esm.sh/jspdf';
 import html2canvas from 'https://esm.sh/html2canvas';
@@ -1122,6 +1122,15 @@ const SalesPipeline = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const stages = ['Lead In', 'Contact Made', 'Demo Scheduled', 'Proposal Sent', 'Negotiation', 'Closed Won', 'Closed Lost'];
+  const scrollRef = useRef(null);
+
+  const scrollLeft = () => {
+    if (scrollRef.current) scrollRef.current.scrollBy({ left: -320, behavior: 'smooth' });
+  };
+
+  const scrollRight = () => {
+    if (scrollRef.current) scrollRef.current.scrollBy({ left: 320, behavior: 'smooth' });
+  };
 
   const fetchDeals = async () => {
     setLoading(true);
@@ -1144,11 +1153,19 @@ const SalesPipeline = () => {
     <div className="p-6 h-full flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-2xl font-bold">Sales Pipeline</h2>
-        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-          <Plus size={16} /> Add Deal
-        </button>
+        <div className="flex gap-2">
+          <button onClick={scrollLeft} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
+            <ChevronLeft size={20} />
+          </button>
+          <button onClick={scrollRight} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
+            <ChevronRight size={20} />
+          </button>
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 ml-2">
+            <Plus size={16} /> Add Deal
+          </button>
+        </div>
       </div>
-      <div className="flex-1 flex gap-4 overflow-x-scroll pb-4 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div ref={scrollRef} className="flex-1 flex gap-4 overflow-x-scroll pb-4 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
         {loading ? <div className="m-auto"><Spinner /></div> : stages.map(stage => (
           <div key={stage} className="w-80 shrink-0 bg-gray-50 rounded-xl flex flex-col h-full border">
             <div className="p-3 border-b flex justify-between items-center bg-gray-100 rounded-t-xl">
