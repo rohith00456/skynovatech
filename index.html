@@ -41,7 +41,7 @@
     async function init() {
       try {
         // Fetch the raw JSX file
-        const response = await fetch('./SkynovaCRM_Complete.jsx');
+        const response = await fetch('./SkynovaCRM_Complete.jsx?v=' + Date.now());
         if (!response.ok) throw new Error('Failed to load JSX file');
         let code = await response.text();
 
