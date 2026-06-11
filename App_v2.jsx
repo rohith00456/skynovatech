@@ -1152,7 +1152,7 @@ const SalesPipeline = () => {
   return (
     <div className="p-6 h-full flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-6 shrink-0">
-        <h2 className="text-2xl font-bold">Sales Pipeline</h2>
+        <h2 className="text-2xl font-bold text-red-600">Sales Pipeline TEST TEST</h2>
         <div className="flex gap-2">
           <button onClick={scrollLeft} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
             <ChevronLeft size={20} />
