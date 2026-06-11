@@ -902,6 +902,9 @@ const Customers = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectForm, setProjectForm] = useState({ name: '', customer_id: '', assigned_to: '' });
+  const [users, setUsers] = useState([]);
 
   const fetchCust = async () => {
     setLoading(true);
@@ -912,7 +915,19 @@ const Customers = () => {
 
   useEffect(() => {
     fetchCust();
+    supabase.from('users').select('id, name').then(({data}) => setUsers(data || []));
   }, []);
+
+  const handleSaveProject = async (e) => {
+    e.preventDefault();
+    const { error } = await supabase.from('projects').insert([{ name: projectForm.name, customer_id: projectForm.customer_id, assigned_to: projectForm.assigned_to || null }]);
+    if (error) alert("Error saving project: " + error.message);
+    else {
+      setIsProjectModalOpen(false);
+      setProjectForm({ name: '', customer_id: '', assigned_to: '' });
+      alert("Project created successfully!");
+    }
+  };
 
   const handleEditRevenue = async (e, customer) => {
     e.stopPropagation();
@@ -932,9 +947,14 @@ const Customers = () => {
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Customers</h2>
-        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-          <Plus size={16} /> Add Customer
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setIsProjectModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+            <Plus size={16} /> Add Project
+          </button>
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <Plus size={16} /> Add Customer
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {loading ? <Spinner /> : customers.map(c => (
@@ -968,6 +988,40 @@ const Customers = () => {
         ))}
       </div>
       {isModalOpen && <AddCustomerModal onClose={() => { setIsModalOpen(false); fetchCust(); }} />}
+      {isProjectModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold">Add Project</h3>
+              <button onClick={() => setIsProjectModalOpen(false)} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleSaveProject} className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">Customer *</label>
+                <select required value={projectForm.customer_id} onChange={e => setProjectForm({...projectForm, customer_id: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500">
+                  <option value="">Select Customer...</option>
+                  {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Project Name *</label>
+                <input required type="text" value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Assigned To</label>
+                <select value={projectForm.assigned_to} onChange={e => setProjectForm({...projectForm, assigned_to: e.target.value})} className="w-full border p-2 rounded text-sm outline-none focus:border-blue-500">
+                  <option value="">Unassigned</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setIsProjectModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Project</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2403,6 +2457,7 @@ const SupportTickets = () => {
   const [filters, setFilters] = useState({ status: '', priority: '' });
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketForm, setTicketForm] = useState({ customer_id: '', project_id: '', assigned_to: '' });
 
   const [customers, setCustomers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -2422,7 +2477,7 @@ const SupportTickets = () => {
     fetchTickets();
     supabase.from('customers').select('id, name').then(({data}) => setCustomers(data || []));
     supabase.from('users').select('id, name').then(({data}) => setUsers(data || []));
-    supabase.from('projects').select('id, name').then(({data}) => setProjects(data || []));
+    supabase.from('projects').select('id, name, customer_id, assigned_to').then(({data}) => setProjects(data || []));
   }, [filters]);
 
   const handleSave = async (e) => {
@@ -4711,3 +4766,4 @@ export default function SkynovaCRM() {
     </div>
   );
 }
+
