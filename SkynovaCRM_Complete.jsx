@@ -850,6 +850,20 @@ const Customers = () => {
     fetchCust();
   }, []);
 
+  const handleEditRevenue = async (e, customer) => {
+    e.stopPropagation();
+    const newRevenue = window.prompt(`Enter new total revenue for ${customer.name} (in ₹):`, customer.total_revenue || 0);
+    if (newRevenue === null) return;
+    const revNum = parseFloat(newRevenue);
+    if (isNaN(revNum) || revNum < 0) {
+      alert("Please enter a valid positive number.");
+      return;
+    }
+    const { error } = await supabase.from('customers').update({ total_revenue: revNum }).eq('id', customer.id);
+    if (error) alert("Error saving revenue: " + error.message);
+    else fetchCust();
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
@@ -877,9 +891,14 @@ const Customers = () => {
             </div>
             <h3 className="font-semibold text-gray-900">{c.name}</h3>
             <p className="text-sm text-gray-500 mb-4">{c.company}</p>
-            <div className="pt-3 border-t flex justify-between text-sm">
+            <div className="pt-3 border-t flex justify-between text-sm items-center">
               <span className="text-gray-500">Revenue</span>
-              <span className="font-medium">₹{(c.total_revenue || 0).toLocaleString()}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">₹{(c.total_revenue || 0).toLocaleString()}</span>
+                <button onClick={(e) => handleEditRevenue(e, c)} className="text-gray-400 hover:text-blue-600">
+                  <Edit size={14} />
+                </button>
+              </div>
             </div>
           </div>
         ))}
