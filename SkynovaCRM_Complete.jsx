@@ -1150,31 +1150,23 @@ const SalesPipeline = () => {
   };
 
   return (
-    <div className="p-6 h-full flex flex-col overflow-hidden">
+    <div className="p-6 h-full flex flex-col overflow-y-auto">
       <div className="flex justify-between items-center mb-6 shrink-0">
         <h2 className="text-2xl font-bold">Sales Pipeline</h2>
-        <div className="flex gap-2">
-          <button onClick={scrollLeft} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
-            <ChevronLeft size={20} />
-          </button>
-          <button onClick={scrollRight} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
-            <ChevronRight size={20} />
-          </button>
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 ml-2">
-            <Plus size={16} /> Add Deal
-          </button>
-        </div>
+        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+          <Plus size={16} /> Add Deal
+        </button>
       </div>
-      <div ref={scrollRef} className="flex-1 flex gap-4 overflow-x-scroll pb-4 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 flex flex-wrap gap-6 pb-6 w-full items-start justify-start">
         {loading ? <div className="m-auto"><Spinner /></div> : stages.map(stage => (
-          <div key={stage} className="w-80 shrink-0 bg-gray-50 rounded-xl flex flex-col h-full border">
-            <div className="p-3 border-b flex justify-between items-center bg-gray-100 rounded-t-xl">
+          <div key={stage} className="w-80 shrink-0 bg-gray-50 rounded-xl flex flex-col border shadow-sm" style={{ height: '600px' }}>
+            <div className="p-3 border-b flex justify-between items-center bg-gray-100 rounded-t-xl shrink-0">
               <h3 className="font-semibold text-gray-700">{stage}</h3>
               <span className="bg-white text-gray-600 px-2 py-0.5 rounded-full text-xs shadow-sm">
                 {deals.filter(d => d.stage === stage).length}
               </span>
             </div>
-            <div className="p-3 flex-1 overflow-y-auto space-y-3">
+            <div className="p-3 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
               {deals.filter(d => d.stage === stage).map(deal => (
                 <div key={deal.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 cursor-pointer hover:shadow-md transition-shadow">
                   <div className="flex justify-between items-start mb-2">
