@@ -1501,9 +1501,8 @@ const Stipends = () => {
 
   const fetchStipends = async () => {
     setLoading(true);
-    let query = supabase.from('stipends').select('*, users(name)');
+    let query = supabase.from('stipends').select('*, users(name), interns(name)');
     
-    if (filters.search) query = query.ilike('users.name', `%${filters.search}%`);
     if (filters.project_name) query = query.ilike('project_name', `%${filters.project_name}%`);
     if (filters.status.length) query = query.in('status', filters.status);
     if (filters.role.length) query = query.in('role', filters.role);
@@ -1546,9 +1545,8 @@ const Stipends = () => {
   };
 
   const exportCSV = () => {
-    const headers = ['ID', 'User', 'Project', 'Amount', 'Status', 'Date'];
-    const csvData = stipends.map(s => [s.id, s.users?.name, s.project_name, s.amount, s.status, s.stipend_date].join(','));
-    const csvContent = [headers.join(','), ...csvData].join('\n');
+    const csvData = stipends.map(s => [s.id, s.users?.name || s.interns?.name || 'Unknown', s.project_name, s.amount, s.status, s.stipend_date].join(','));
+    const csvContent = "ID,Name,Project,Amount,Status,Date\n" + csvData.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3393,13 +3391,16 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
       }
     }
 
+    const stipendAmount = Number(fd.get('stipend_amount')) || 0;
+
     const payload = {
       intern_id: fd.get('intern_id'),
       name: fd.get('name'),
       email: fd.get('email'),
       phone: fd.get('phone'),
       status: fd.get('status'),
-      expiry_date: expiryDate
+      expiry_date: expiryDate,
+      stipend_amount: stipendAmount
     };
 
     if (password) {
@@ -3409,6 +3410,17 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
     if (existing) {
       const { error } = await supabase.from('interns').update(payload).eq('id', existing.id);
       if (error) { showToast(error.message, 'error'); return; }
+      
+      // Also update stipends table
+      if (stipendAmount > 0) {
+        const { data: existingStipend } = await supabase.from('stipends').select('id').eq('intern_id', existing.id);
+        if (existingStipend && existingStipend.length > 0) {
+          await supabase.from('stipends').update({ amount: stipendAmount }).eq('intern_id', existing.id);
+        } else {
+          await supabase.from('stipends').insert([{ intern_id: existing.id, amount: stipendAmount, status: 'Pending', stipend_date: new Date().toISOString() }]);
+        }
+      }
+      
       logActivity(null, 'Updated Intern', 'interns', existing.id, payload.intern_id);
       showToast('Intern account updated');
     } else {
@@ -3422,6 +3434,10 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
       const { data, error } = await supabase.from('interns').insert([payload]).select().single();
       if (error) { showToast(error.message, 'error'); return; }
       
+      if (stipendAmount > 0) {
+        await supabase.from('stipends').insert([{ intern_id: data.id, amount: stipendAmount, status: 'Pending', stipend_date: new Date().toISOString() }]);
+      }
+
       if (prefilled) {
         await supabase.from('intern_applications').update({ status: 'Approved' }).eq('id', prefilled.id);
       }
@@ -3455,7 +3471,11 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
           <input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder={existing ? "Enter new password to change" : "Password"} required={!existing} className="w-full border p-2 rounded text-sm font-mono" />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Stipend Amount (₹)</label>
+            <input type="number" step="0.01" name="stipend_amount" defaultValue={existing?.stipend_amount || 0} min="0" className="w-full border p-2 rounded text-sm" />
+          </div>
           <div>
             <label className="block text-sm mb-1">Account Expiry</label>
             <select value={expiryType} onChange={e => setExpiryType(e.target.value)} className="w-full border p-2 rounded text-sm">
