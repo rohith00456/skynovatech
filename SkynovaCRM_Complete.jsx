@@ -3353,8 +3353,17 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
   const [password, setPassword] = useState('');
   const [expiryType, setExpiryType] = useState('30');
   const [customExpiry, setCustomExpiry] = useState('');
-  
+  const [approvedApps, setApprovedApps] = useState([]);
+
   useEffect(() => {
+    if (!existing) {
+      // Fetch approved applications for the dropdown
+      supabase.from('intern_applications').select('id, name, email, phone').eq('status', 'Approved')
+        .then(({data}) => {
+          if (data) setApprovedApps(data);
+        });
+    }
+
     if (existing) {
       setInternId(existing.intern_id);
     } else {
@@ -3438,8 +3447,10 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
         await supabase.from('stipends').insert([{ intern_id: data.id, amount: stipendAmount, status: 'Pending', stipend_date: new Date().toISOString() }]);
       }
 
-      if (prefilled) {
-        await supabase.from('intern_applications').update({ status: 'Approved' }).eq('id', prefilled.id);
+      // We can check if a prefilled ID was provided or if the user selected one from the dropdown
+      const appIdToUpdate = prefilled ? prefilled.id : fd.get('approved_app_id');
+      if (appIdToUpdate) {
+        await supabase.from('intern_applications').update({ status: 'Approved' }).eq('id', appIdToUpdate);
       }
       
       logActivity(null, 'Created Intern', 'interns', data.id, payload.intern_id);
@@ -3451,6 +3462,25 @@ const CreateInternModal = ({ onClose, prefilled, existing }) => {
   return (
     <Modal isOpen={true} onClose={onClose} title={existing ? "Edit Intern Account" : "Create Intern Account"} maxWidth="max-w-xl">
       <form onSubmit={handleSave} className="space-y-4">
+        {!existing && approvedApps.length > 0 && !prefilled && (
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-4">
+            <label className="block text-sm font-medium text-blue-800 mb-1">Link Approved Applicant (Optional)</label>
+            <select name="approved_app_id" onChange={(e) => {
+              const app = approvedApps.find(a => a.id === e.target.value);
+              if (app) {
+                const form = e.target.closest('form');
+                if (form) {
+                  if (form.name) form.name.value = app.name || '';
+                  if (form.email) form.email.value = app.email || '';
+                  if (form.phone) form.phone.value = app.phone || '';
+                }
+              }
+            }} className="w-full border-blue-300 p-2 rounded text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">-- Manual Entry --</option>
+              {approvedApps.map(a => <option key={a.id} value={a.id}>{a.name} ({a.email})</option>)}
+            </select>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div><label className="block text-sm mb-1">User ID *</label><input name="intern_id" required value={internId} onChange={e => setInternId(e.target.value)} className="w-full border p-2 rounded text-sm bg-blue-50 font-bold" /></div>
           <div><label className="block text-sm mb-1">Full Name *</label><input name="name" required defaultValue={existing?.name || prefilled?.name} className="w-full border p-2 rounded text-sm" /></div>
