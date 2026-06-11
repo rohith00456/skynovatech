@@ -3781,7 +3781,11 @@ const InternTasksAdmin = () => {
   };
 
   const fetchTasks = async () => {
-    const { data } = await supabase.from('intern_tasks').select('*, interns(name, intern_id), intern_teams(name)').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('intern_tasks').select('*, interns(name, intern_id), intern_teams(name)').order('created_at', { ascending: false });
+    if (error) {
+      console.error('fetchTasks error:', error);
+      showToast('Error fetching tasks. Did you run the SQL script?', 'error');
+    }
     setTasks(data || []);
   };
 
@@ -3796,7 +3800,8 @@ const InternTasksAdmin = () => {
   };
 
   const fetchTeams = async () => {
-    const { data } = await supabase.from('intern_teams').select('*, intern_team_members(*, interns(id, name, intern_id))').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('intern_teams').select('*, intern_team_members(*, interns(id, name, intern_id))').order('created_at', { ascending: false });
+    if (error) console.error('fetchTeams error:', error);
     setTeams(data || []);
   };
 
@@ -3821,7 +3826,12 @@ const InternTasksAdmin = () => {
       intern_id: assignMode === 'individual' ? (internId || null) : null,
       team_id: assignMode === 'team' ? (teamId || null) : null
     };
-    await supabase.from('intern_tasks').insert([task]);
+    const { error } = await supabase.from('intern_tasks').insert([task]);
+    if (error) {
+      console.error('Insert Task error:', error);
+      showToast('Error saving task! Check console.', 'error');
+      return;
+    }
     e.target.reset();
     showToast('Task assigned successfully');
     fetchTasks();
