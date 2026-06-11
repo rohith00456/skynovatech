@@ -6,8 +6,10 @@ import {
 import { 
   Search, Bell, Menu, X, Home, Users, Briefcase, Phone, BarChart2, CheckSquare, 
   Calendar, FileText, DollarSign, Activity, Settings, Plus, Filter, Download, 
-  ChevronDown, ChevronRight, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut
+  ChevronDown, ChevronRight, MoreVertical, Edit, Trash, Eye, CheckCircle, Clock, Save, RefreshCw, XCircle, LogOut, Send, Mail
 } from 'lucide-react';
+import { jsPDF } from 'https://esm.sh/jspdf';
+import html2canvas from 'https://esm.sh/html2canvas';
 
 const supabase = createClient(
   'https://wctbdqunrifopbnjisxi.supabase.co',
@@ -430,6 +432,7 @@ const Sidebar = ({ currentRoute, setRoute }) => {
     { id: 'invoices', label: 'Invoices', icon: FileText },
     { id: 'tickets', label: 'Support Tickets', icon: CheckSquare },
     { id: 'whatsapp', label: 'WhatsApp', icon: Phone },
+    { id: 'mail_sender', label: 'Mail Sender', icon: Mail },
     { id: 'reports', label: 'Reports', icon: BarChart },
     { id: 'team', label: 'Team', icon: Users },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -1655,6 +1658,73 @@ const Invoices = () => {
     'Overdue': 'bg-red-100 text-red-800'
   };
 
+  const downloadInvoicePDF = (inv) => {
+    const doc = new jsPDF();
+    doc.setFontSize(24);
+    doc.setTextColor(24, 119, 242);
+    doc.text("Skynova Tech Solutions", 20, 20);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("123 Tech Park, Innovation City, 500001", 20, 28);
+    doc.text("Email: contact@skynovatech.com | Phone: +91 9876543210", 20, 34);
+
+    doc.setFontSize(20);
+    doc.setTextColor(0);
+    doc.text("INVOICE", 150, 25);
+    doc.setFontSize(12);
+    doc.text(`Invoice #: ${inv.invoice_number}`, 150, 35);
+    doc.text(`Date: ${new Date(inv.created_at).toLocaleDateString()}`, 150, 42);
+    doc.text(`Due Date: ${inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A'}`, 150, 49);
+
+    doc.line(20, 55, 190, 55);
+
+    doc.setFontSize(14);
+    doc.text("Bill To:", 20, 65);
+    doc.setFontSize(12);
+    doc.text(inv.customers?.name || 'Customer', 20, 72);
+    
+    // Items
+    doc.setFillColor(240, 240, 240);
+    doc.rect(20, 85, 170, 10, 'F');
+    doc.setFont(undefined, 'bold');
+    doc.text("Description", 25, 92);
+    doc.text("Amount", 160, 92);
+    doc.setFont(undefined, 'normal');
+
+    let y = 105;
+    if (inv.items && Array.isArray(inv.items)) {
+       inv.items.forEach(item => {
+          doc.text(item.description || 'Item', 25, y);
+          doc.text(`Rs. ${Number(item.total || 0).toLocaleString()}`, 160, y);
+          y += 10;
+       });
+    } else {
+       doc.text("Professional Services", 25, y);
+       doc.text(`Rs. ${Number(inv.total).toLocaleString()}`, 160, y);
+       y += 10;
+    }
+
+    doc.line(20, y+10, 190, y+10);
+    y += 20;
+
+    doc.setFont(undefined, 'bold');
+    doc.text(`Subtotal:`, 130, y);
+    doc.text(`Rs. ${Number(inv.subtotal).toLocaleString()}`, 160, y);
+    
+    y += 10;
+    doc.text(`Tax:`, 130, y);
+    doc.text(`Rs. ${Number(inv.tax_amount).toLocaleString()}`, 160, y);
+
+    y += 15;
+    doc.setFontSize(14);
+    doc.setTextColor(24, 119, 242);
+    doc.text(`Total:`, 130, y);
+    doc.text(`Rs. ${Number(inv.total).toLocaleString()}`, 160, y);
+
+    doc.save(`Invoice_${inv.invoice_number}.pdf`);
+  };
+
   return (
     <div className="p-6 h-full flex flex-col">
       <div className="flex justify-between items-center mb-6">
@@ -1712,7 +1782,10 @@ const Invoices = () => {
                     <td className="p-4"><span className={`px-2 py-1 rounded-full text-xs ${statusColors[displayStatus]}`}>{displayStatus}</span></td>
                     <td className="p-4 text-sm text-gray-600">{inv.due_date ? new Date(inv.due_date).toLocaleDateString() : 'N/A'}</td>
                     <td className="p-4">
-                      {balance > 0 && <button onClick={() => setPaymentModalInvoice({ ...inv, balance })} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Record Payment</button>}
+                      <div className="flex gap-2 items-center">
+                        <button onClick={() => downloadInvoicePDF(inv)} className="text-xs border border-blue-500 text-blue-600 px-2 py-1 rounded hover:bg-blue-50">PDF</button>
+                        {balance > 0 && <button onClick={() => setPaymentModalInvoice({ ...inv, balance })} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">Record Payment</button>}
+                      </div>
                     </td>
                   </tr>
                  );
@@ -3400,11 +3473,15 @@ const WebsiteForms = () => {
   const [activeTab, setActiveTab] = useState('Contact Leads');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const getTableName = (tab) => {
     if (tab === 'Contact Leads') return 'lead_captures';
     if (tab === 'Quotes') return 'quote_requests';
     if (tab === 'Internships') return 'intern_applications';
+    if (tab === 'Courses') return 'course_applications';
     if (tab === 'Newsletter') return 'newsletter_subscribers';
     return '';
   };
@@ -3412,14 +3489,36 @@ const WebsiteForms = () => {
   const fetchData = async () => {
     setLoading(true);
     const table = getTableName(activeTab);
-    const { data: res } = await supabase.from(table).select('*').order('created_at', { ascending: false });
+    let query = supabase.from(table).select('*').order('created_at', { ascending: false });
+    
+    // Apply filters
+    if (search) {
+      query = query.or(`email.ilike.%${search}%,name.ilike.%${search}%`);
+    }
+    
+    if (statusFilter !== 'All Status') {
+       if (activeTab === 'Contact Leads') {
+          query = query.eq('is_converted', statusFilter === 'Converted');
+       } else {
+          query = query.eq('status', statusFilter);
+       }
+    }
+
+    const { data: res } = await query;
     setData(res || []);
     setLoading(false);
   };
 
   useEffect(() => {
+    setSelectedIds(new Set());
+    setSearch('');
+    setStatusFilter('All Status');
     fetchData();
   }, [activeTab]);
+
+  useEffect(() => {
+    fetchData();
+  }, [search, statusFilter]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this record?')) return;
@@ -3429,12 +3528,24 @@ const WebsiteForms = () => {
     else fetchData();
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.size} records?`)) return;
+    const table = getTableName(activeTab);
+    const ids = Array.from(selectedIds);
+    await supabase.from(table).delete().in('id', ids);
+    setSelectedIds(new Set());
+    fetchData();
+  };
+
   const handleUpdateStatus = async (id, newStatus) => {
     const table = getTableName(activeTab);
     const updateData = activeTab === 'Contact Leads' ? { is_converted: newStatus === 'Converted' } : { status: newStatus };
     const { error } = await supabase.from(table).update(updateData).eq('id', id);
     if (error) alert('Error updating status: ' + error.message);
-    else fetchData();
+    else {
+      setData(data.map(d => d.id === id ? { ...d, ...updateData } : d));
+    }
   };
 
   const handleConvertToLead = async (item) => {
@@ -3458,134 +3569,301 @@ const WebsiteForms = () => {
     }
   };
 
-  return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Website Submissions</h2>
-        <button onClick={fetchData} className="flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-          <RefreshCw className="w-4 h-4 mr-2" /> Refresh
-        </button>
+  const calculateAge = (dob) => {
+    if (!dob) return 'N/A';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return `${age} yrs`;
+  };
+
+  const downloadPDF = async (item) => {
+    const doc = new jsPDF();
+    doc.setFontSize(22);
+    doc.setTextColor(24, 119, 242);
+    doc.text(`Skynova Tech Solutions`, 105, 20, null, null, "center");
+    
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${activeTab === 'Internships' ? 'Internship' : 'Course'} Application Profile`, 105, 30, null, null, "center");
+    
+    // Add Photo if it exists
+    if (item.photo_url) {
+      try {
+        const imgUrl = item.photo_url;
+        // Since Supabase storage URLs can have CORS issues with html2canvas/jsPDF, 
+        // we load it into an Image object
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = imgUrl;
+        });
+        // Add to PDF (x, y, width, height)
+        doc.addImage(img, 'JPEG', 150, 40, 40, 40);
+      } catch (e) {
+        console.error("Failed to load profile photo for PDF:", e);
+      }
+    }
+
+    doc.setFontSize(12);
+    let y = 50;
+    
+    const addLine = (label, value) => {
+      doc.setFont(undefined, 'bold');
+      doc.text(`${label}:`, 20, y);
+      doc.setFont(undefined, 'normal');
+      doc.text(`${value || 'N/A'}`, 60, y);
+      y += 10;
+    };
+
+    addLine("Name", item.name);
+    addLine("Email", item.email);
+    addLine("Phone", item.contact || item.phone);
+    if (item.dob) addLine("Age", calculateAge(item.dob));
+    if (activeTab === 'Internships') addLine("Domain", item.domain);
+    if (activeTab === 'Courses') addLine("Course", item.course);
+    
+    if (item.college) addLine("College", item.college);
+    if (item.address) {
+       y+=5;
+       doc.setFont(undefined, 'bold');
+       doc.text(`Address:`, 20, y);
+       doc.setFont(undefined, 'normal');
+       doc.text(`${item.address}, ${item.district}, ${item.state} ${item.pincode}`, 20, y+8);
+       y += 20;
+    }
+
+    addLine("Status", item.status || 'Pending');
+    addLine("Submitted", new Date(item.created_at).toLocaleString());
+
+    doc.save(`${item.name}_Profile.pdf`);
+  };
+
+  const exportTablePDF = () => {
+    const doc = new jsPDF('landscape');
+    doc.text(`${activeTab} Data Export`, 14, 15);
+    // Basic table export using standard text (jsPDF-autotable would be better, but building manually here)
+    let y = 30;
+    data.forEach((item, i) => {
+      if (y > 190) { doc.addPage(); y = 20; }
+      const line = `${i+1}. ${item.name || item.email} - ${item.status || 'New'} - ${new Date(item.created_at).toLocaleDateString()}`;
+      doc.text(line, 14, y);
+      y += 10;
+    });
+    doc.save(`${activeTab}_Export.pdf`);
+  };
+
+  const renderStats = () => {
+    if (activeTab !== 'Internships' && activeTab !== 'Courses') return null;
+    const total = data.length;
+    const approved = data.filter(d => d.status === 'Approved').length;
+    const pending = data.filter(d => !d.status || d.status === 'Pending').length;
+    const cancelled = data.filter(d => d.status === 'Cancelled').length;
+
+    return (
+      <div className="flex bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex-1 text-center border-r border-gray-200">
+          <div className="text-3xl font-bold text-blue-600">{total}</div>
+          <div className="text-sm text-gray-500 font-medium">Total</div>
+        </div>
+        <div className="flex-1 text-center border-r border-gray-200">
+          <div className="text-3xl font-bold text-green-600">{approved}</div>
+          <div className="text-sm text-gray-500 font-medium">Approved</div>
+        </div>
+        <div className="flex-1 text-center border-r border-gray-200">
+          <div className="text-3xl font-bold text-yellow-500">{pending}</div>
+          <div className="text-sm text-gray-500 font-medium">Pending</div>
+        </div>
+        <div className="flex-1 text-center">
+          <div className="text-3xl font-bold text-red-500">{cancelled}</div>
+          <div className="text-sm text-gray-500 font-medium">Cancelled</div>
+        </div>
       </div>
-      <div className="flex border-b mb-6 overflow-x-auto">
-        {['Contact Leads', 'Quotes', 'Internships', 'Newsletter'].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+    );
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col bg-gray-50 overflow-y-auto">
+      <div className="flex border-b mb-6 overflow-x-auto bg-white rounded-t-xl px-2 pt-2 shadow-sm">
+        {['Contact Leads', 'Quotes', 'Internships', 'Courses', 'Newsletter'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-4 font-medium transition-colors whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}>
             {tab}
           </button>
         ))}
       </div>
-      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-        <div className="overflow-x-auto flex-1 p-4">
+
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+          <FileText className="text-blue-500"/>
+          {activeTab === 'Contact Leads' && 'Contact Messages'}
+          {activeTab === 'Quotes' && 'Quote Requests'}
+          {activeTab === 'Internships' && 'Internship Applicants'}
+          {activeTab === 'Courses' && 'Course Applicants'}
+          {activeTab === 'Newsletter' && 'Newsletter Subscribers'}
+        </h2>
+      </div>
+
+      {renderStats()}
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+        <div className="p-4 border-b bg-white flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex gap-4 flex-1">
+            <input 
+              type="text" 
+              placeholder="Search by name/email..." 
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="border p-2 rounded-lg w-64 text-sm focus:ring-2 outline-none"
+            />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border p-2 rounded-lg text-sm outline-none">
+              <option value="All Status">All Status</option>
+              {(activeTab === 'Internships' || activeTab === 'Courses') && <>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Cancelled">Cancelled</option>
+              </>}
+              {activeTab === 'Quotes' && <>
+                <option value="Pending">Pending</option>
+                <option value="In Process">In Process</option>
+                <option value="Approved">Approved</option>
+              </>}
+              {activeTab === 'Contact Leads' && <>
+                <option value="New">Pending (New)</option>
+                <option value="Converted">Converted</option>
+              </>}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={exportTablePDF} className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium">
+              <Download className="w-4 h-4 mr-2" /> Export PDF
+            </button>
+            {selectedIds.size > 0 && (
+              <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+                Delete Selected ({selectedIds.size})
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto flex-1">
           {loading ? <div className="flex justify-center p-8"><RefreshCw className="w-8 h-8 animate-spin text-blue-600" /></div> : (
             <table className="w-full text-left border-collapse min-w-max">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-[#2a3b4e] text-white">
                 <tr>
-                  {activeTab === 'Contact Leads' && <><th className="p-4">Name</th><th className="p-4">Contact Info</th><th className="p-4">Message Details</th><th className="p-4">Status</th></>}
-                  {activeTab === 'Quotes' && <><th className="p-4">Name</th><th className="p-4">Contact Info</th><th className="p-4">Service Required</th><th className="p-4">Status</th></>}
-                  {activeTab === 'Internships' && <><th className="p-4">Applicant</th><th className="p-4">Contact Info</th><th className="p-4">Education & Domain</th><th className="p-4">Status</th></>}
-                  {activeTab === 'Newsletter' && <><th className="p-4">Email</th><th className="p-4">Status</th></>}
-                  <th className="p-4">Date</th>
-                  <th className="p-4 text-right">Actions</th>
+                  {activeTab === 'Newsletter' && <th className="p-3 w-10"></th>}
+                  <th className="p-3 w-16">ID</th>
+                  {activeTab === 'Contact Leads' && <><th className="p-3">Full Name</th><th className="p-3">Email Address</th><th className="p-3">Subject</th><th className="p-3">Status</th><th className="p-3">Submitted At</th></>}
+                  {activeTab === 'Quotes' && <><th className="p-3">Full Name</th><th className="p-3">Email Address</th><th className="p-3">Service</th><th className="p-3">Status</th><th className="p-3">Submitted</th></>}
+                  {activeTab === 'Internships' && <><th className="p-3">Name</th><th className="p-3">Domain</th><th className="p-3">Age</th><th className="p-3">Email</th><th className="p-3">Status</th><th className="p-3">Submitted</th></>}
+                  {activeTab === 'Courses' && <><th className="p-3">Name</th><th className="p-3">Course</th><th className="p-3">Age</th><th className="p-3">Email</th><th className="p-3">Status</th><th className="p-3">Submitted</th></>}
+                  {activeTab === 'Newsletter' && <><th className="p-3">Email</th><th className="p-3">Status</th><th className="p-3">Date Subscribed</th></>}
+                  <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {data.map(item => (
-                  <tr key={item.id} className="border-b hover:bg-gray-50 align-top">
+                {data.map((item, index) => (
+                  <tr key={item.id} className="border-b hover:bg-gray-50 text-sm text-gray-700">
+                    {activeTab === 'Newsletter' && (
+                      <td className="p-3">
+                        <input type="checkbox" checked={selectedIds.has(item.id)} onChange={(e) => {
+                          const newIds = new Set(selectedIds);
+                          if (e.target.checked) newIds.add(item.id); else newIds.delete(item.id);
+                          setSelectedIds(newIds);
+                        }} className="w-4 h-4 cursor-pointer" />
+                      </td>
+                    )}
+                    <td className="p-3 text-gray-500">{index + 1}</td>
+                    
                     {/* Contact Leads */}
                     {activeTab === 'Contact Leads' && <>
-                      <td className="p-4 font-medium">{item.name}</td>
-                      <td className="p-4 text-sm text-gray-600">
-                        <div>{item.email}</div>
-                        <div>{item.phone}</div>
+                      <td className="p-3">{item.name}</td>
+                      <td className="p-3">{item.email}</td>
+                      <td className="p-3 max-w-xs truncate" title={item.subject || item.message}>{item.subject || 'Website Message'}</td>
+                      <td className="p-3">
+                        <select 
+                          value={item.is_converted ? 'Converted' : 'New'} 
+                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                          className={`text-xs font-medium rounded px-2 py-1 border outline-none ${item.is_converted ? 'bg-green-100 text-green-800 border-green-200' : 'bg-teal-100 text-teal-800 border-teal-200'}`}
+                        >
+                          <option value="New">Pending</option>
+                          <option value="Converted">Converted</option>
+                        </select>
                       </td>
-                      <td className="p-4 text-sm">
-                        <div className="font-semibold text-gray-900">{item.subject}</div>
-                        <div className="text-gray-600 max-w-xs truncate" title={item.message}>{item.message}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.is_converted ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                          {item.is_converted ? 'Converted' : 'New'}
-                        </span>
-                      </td>
+                      <td className="p-3">{new Date(item.created_at).toLocaleString('en-GB', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true})}</td>
                     </>}
                     
                     {/* Quotes */}
                     {activeTab === 'Quotes' && <>
-                      <td className="p-4 font-medium">{item.name}</td>
-                      <td className="p-4 text-sm text-gray-600">
-                        <div>{item.email}</div>
-                        <div>{item.phone}</div>
-                      </td>
-                      <td className="p-4 text-sm">
-                        <div className="font-semibold text-gray-900">{item.main_service}</div>
-                        <div className="text-gray-600 max-w-xs truncate" title={item.message}>{item.detailed_service} - {item.message}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${item.status === 'Converted' ? 'bg-green-100 text-green-800' : item.status === 'Contacted' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                          {item.status || 'New'}
-                        </span>
-                      </td>
-                    </>}
-
-                    {/* Internships */}
-                    {activeTab === 'Internships' && <>
-                      <td className="p-4 font-medium">{item.name}</td>
-                      <td className="p-4 text-sm text-gray-600">
-                        <div>{item.email}</div>
-                        <div>{item.contact}</div>
-                      </td>
-                      <td className="p-4 text-sm">
-                        <div className="font-semibold text-gray-900">{item.domain}</div>
-                        <div className="text-gray-600">{item.college}</div>
-                      </td>
-                      <td className="p-4">
+                      <td className="p-3">{item.name}</td>
+                      <td className="p-3">{item.email}</td>
+                      <td className="p-3">{item.main_service}</td>
+                      <td className="p-3">
                         <select 
                           value={item.status || 'Pending'} 
                           onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
-                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 ${item.status === 'Reviewed' ? 'bg-blue-100 text-blue-800' : item.status === 'Rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}
+                          className={`text-xs font-medium rounded px-2 py-1 border outline-none ${item.status === 'Approved' ? 'bg-green-100 text-green-800 border-green-200' : item.status === 'In Process' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-teal-100 text-teal-800 border-teal-200'}`}
                         >
                           <option value="Pending">Pending</option>
-                          <option value="Reviewed">Reviewed</option>
-                          <option value="Rejected">Rejected</option>
+                          <option value="In Process">In Process</option>
+                          <option value="Approved">Approved</option>
                         </select>
                       </td>
+                      <td className="p-3">{new Date(item.created_at).toLocaleString('en-GB')}</td>
+                    </>}
+
+                    {/* Internships & Courses */}
+                    {(activeTab === 'Internships' || activeTab === 'Courses') && <>
+                      <td className="p-3">{item.name}</td>
+                      <td className="p-3">{activeTab === 'Internships' ? item.domain : item.course}</td>
+                      <td className="p-3">{calculateAge(item.dob)}</td>
+                      <td className="p-3">{item.email}</td>
+                      <td className="p-3">
+                        <select 
+                          value={item.status || 'Pending'} 
+                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                          className={`text-xs font-medium rounded px-2 py-1 border outline-none bg-white`}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Approved">Approved</option>
+                          <option value="Cancelled">Cancelled</option>
+                        </select>
+                      </td>
+                      <td className="p-3">{new Date(item.created_at).toLocaleString('en-GB', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true})}</td>
                     </>}
 
                     {/* Newsletter */}
                     {activeTab === 'Newsletter' && <>
-                      <td className="p-4 font-medium">{item.email}</td>
-                      <td className="p-4">
-                         <select 
-                          value={item.status || 'Subscribed'} 
-                          onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
-                          className={`text-xs font-medium rounded-full px-2 py-1 border-0 ${item.status === 'Unsubscribed' ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'}`}
-                        >
-                          <option value="Subscribed">Subscribed</option>
-                          <option value="Unsubscribed">Unsubscribed</option>
-                        </select>
+                      <td className="p-3">{item.email}</td>
+                      <td className="p-3">
+                         <span className="text-xs font-medium rounded px-2 py-1 bg-green-100 text-green-800 border border-green-200">
+                           {item.status || 'Subscribed'}
+                         </span>
                       </td>
+                      <td className="p-3">{new Date(item.created_at).toISOString().replace('T', ' ').substring(0, 16)}</td>
                     </>}
 
-                    <td className="p-4 text-sm text-gray-500 whitespace-nowrap">{new Date(item.created_at).toLocaleDateString()}</td>
-                    <td className="p-4 text-right">
+                    <td className="p-3 text-right">
                       <div className="flex justify-end gap-2">
-                        {(activeTab === 'Contact Leads' || activeTab === 'Quotes') && (
-                          <button 
-                            onClick={() => handleConvertToLead(item)} 
-                            title="Add to CRM Leads"
-                            disabled={activeTab === 'Contact Leads' ? item.is_converted : item.status === 'Converted'}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:opacity-50"
-                          >
-                            <CheckCircle className="w-5 h-5" />
+                        {(activeTab === 'Internships' || activeTab === 'Courses') && (
+                          <button onClick={() => downloadPDF(item)} className="px-2 py-1 text-xs border border-blue-500 text-blue-600 hover:bg-blue-50 rounded">
+                            PDF
                           </button>
                         )}
-                        <button onClick={() => handleDelete(item.id)} title="Delete Record" className="p-1 text-red-600 hover:bg-red-50 rounded">
-                          <Trash className="w-5 h-5" />
+                        <button className="px-2 py-1 text-xs border border-blue-500 text-blue-600 hover:bg-blue-50 rounded">
+                          View
+                        </button>
+                        <button onClick={() => handleDelete(item.id)} className="px-2 py-1 text-xs border border-red-500 text-red-600 hover:bg-red-50 rounded">
+                          Delete
                         </button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan="7" className="text-center p-8 text-gray-500">No submissions found for {activeTab}.</td></tr>}
+                {data.length === 0 && <tr><td colSpan="8" className="text-center p-8 text-gray-500">No submissions found for {activeTab}.</td></tr>}
               </tbody>
             </table>
           )}
@@ -3595,8 +3873,102 @@ const WebsiteForms = () => {
   );
 };
 
-// --- APP COMPONENT ---
+// --- MAIL SENDER COMPONENT ---
+const MailSender = () => {
+  const [emails, setEmails] = useState('');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!emails || !subject || !message) return alert("Please fill all fields");
+    setSending(true);
+    // Simulate API call for sending emails
+    await new Promise(r => setTimeout(r, 1500));
+    setSending(false);
+    alert(`Successfully sent email to: ${emails}`);
+    setEmails(''); setSubject(''); setMessage('');
+  };
+
+  return (
+    <div className="p-6 h-full flex flex-col bg-gray-50 items-center overflow-y-auto">
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 max-w-3xl w-full mt-6">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-blue-600 mb-1">Skynova Tech Solutions</h2>
+          <h3 className="text-xl font-semibold text-gray-800">Mail Sender</h3>
+        </div>
+
+        <form onSubmit={handleSend} className="space-y-6">
+          <div>
+            <input 
+              type="text" 
+              placeholder="Recipient Emails (comma separated)" 
+              value={emails}
+              onChange={e => setEmails(e.target.value)}
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1 ml-1">Example: user1@mail.com, user2@mail.com</p>
+          </div>
+
+          <div>
+            <input 
+              type="text" 
+              placeholder="Email Subject" 
+              value={subject}
+              onChange={e => setSubject(e.target.value)}
+              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              required
+            />
+          </div>
+
+          <div className="border rounded-lg overflow-hidden">
+            <div className="bg-gray-50 border-b p-2 flex gap-4 text-sm text-gray-600">
+              <button type="button" className="hover:text-black font-medium">File</button>
+              <button type="button" className="hover:text-black font-medium">Edit</button>
+              <button type="button" className="hover:text-black font-medium">View</button>
+              <button type="button" className="hover:text-black font-medium">Insert</button>
+              <button type="button" className="hover:text-black font-medium">Format</button>
+            </div>
+            <div className="bg-white border-b p-2 flex gap-3 items-center text-gray-600">
+              <button type="button" className="p-1 hover:bg-gray-100 rounded">↶</button>
+              <button type="button" className="p-1 hover:bg-gray-100 rounded">↷</button>
+              <select className="border rounded px-2 py-1 text-sm outline-none bg-transparent">
+                <option>Paragraph</option>
+                <option>Heading 1</option>
+              </select>
+              <button type="button" className="p-1 font-bold hover:bg-gray-100 rounded">B</button>
+              <button type="button" className="p-1 italic hover:bg-gray-100 rounded">I</button>
+              <button type="button" className="p-1 hover:bg-gray-100 rounded">≡</button>
+            </div>
+            <textarea 
+              placeholder="Email Message" 
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              className="w-full p-4 h-64 outline-none resize-none"
+              required
+            ></textarea>
+            <div className="bg-gray-50 border-t p-1 flex justify-between text-xs text-gray-400 px-3">
+              <span>p</span>
+              <span className="font-bold flex items-center gap-1"><span className="text-blue-500">O</span> tiny</span>
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={sending}
+            className="w-full bg-[#1877F2] hover:bg-blue-700 text-white font-medium py-3 rounded-md transition-colors disabled:opacity-70"
+          >
+            {sending ? 'Sending...' : 'Send Email'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// --- APP COMPONENT ---
 export default function SkynovaCRM() {
   const [currentRoute, setRoute] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -3687,6 +4059,7 @@ export default function SkynovaCRM() {
       case 'invoices': return <Invoices />;
       case 'tickets': return <SupportTickets />;
       case 'whatsapp': return <WhatsAppCenter />;
+      case 'mail_sender': return <MailSender />;
       case 'team': return <TeamManagement />;
       case 'notifications': return <NotificationCenter />;
       case 'settings': return <SettingsPage />;
