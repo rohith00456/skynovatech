@@ -508,13 +508,14 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [{ count: leadsCount }, { count: custCount }, { data: deals }, { count: followups }, { count: openTickets }, { count: pendingInvoices }] = await Promise.all([
+      const [{ count: leadsCount }, { count: custCount }, { data: deals }, { count: followups }, { count: openTickets }, { count: pendingInvoices }, { count: pendingInterns }] = await Promise.all([
         supabase.from('leads').select('*', { count: 'exact', head: true }),
         supabase.from('customers').select('*', { count: 'exact', head: true }),
         supabase.from('deals').select('value, stage, name'),
         supabase.from('followups').select('*', { count: 'exact', head: true }).neq('status', 'Completed'),
         supabase.from('tickets').select('*', { count: 'exact', head: true }).in('status', ['Open', 'In Progress']),
-        supabase.from('invoices').select('*', { count: 'exact', head: true }).in('status', ['Sent', 'Partially Paid', 'Overdue'])
+        supabase.from('invoices').select('*', { count: 'exact', head: true }).in('status', ['Sent', 'Partially Paid', 'Overdue']),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'intern').eq('status', 'pending')
       ]);
 
       let totalRev = 0;
@@ -532,7 +533,8 @@ const Dashboard = () => {
         pendingFollowups: followups || 0,
         conversionRate: custCount && leadsCount ? Math.round((custCount / (leadsCount + custCount)) * 100) : 0,
         openTickets: openTickets || 0,
-        pendingInvoices: pendingInvoices || 0
+        pendingInvoices: pendingInvoices || 0,
+        pendingInternships: pendingInterns || 0
       });
 
       const { data: acts } = await supabase.from('activities').select('*').order('created_at', { ascending: false }).limit(6);
@@ -567,6 +569,7 @@ const Dashboard = () => {
           { label: 'Conversion', val: `${stats.conversionRate}%`, color: 'text-teal-600', bg: 'bg-teal-100' },
           { label: 'Open Tickets', val: stats.openTickets, color: 'text-orange-600', bg: 'bg-orange-100' },
           { label: 'Pending Invoices', val: stats.pendingInvoices, color: 'text-pink-600', bg: 'bg-pink-100' },
+          { label: 'Pending Internships', val: stats.pendingInternships || 0, color: 'text-indigo-600', bg: 'bg-indigo-100' },
         ].map((s, i) => (
           <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
             <p className="text-gray-500 text-sm font-medium">{s.label}</p>
@@ -4915,5 +4918,6 @@ export default function SkynovaCRM() {
     </div>
   );
 }
+
 
 
