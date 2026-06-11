@@ -3835,50 +3835,102 @@ const InternTasksAdmin = () => {
     <div className="p-6 h-full flex flex-col">
       <h2 className="text-2xl font-bold mb-6">Intern Tasks & Monitoring</h2>
 
-      <div className="flex border-b mb-6">
-        {['Tasks', 'Submissions', 'Announcements'].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-3 font-medium transition-colors ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
+      <div className="flex border-b mb-6 overflow-x-auto">
+        {['Assign Task', 'Assigned Tasks', 'Submissions', 'Teams', 'Announcements'].map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 font-medium transition-colors whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}`}>
             {tab}
           </button>
         ))}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'Tasks' && (
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="md:col-span-1 bg-white p-4 rounded-xl shadow-sm border h-fit">
-              <h3 className="font-bold mb-4">Create New Task</h3>
+
+        {/* ========== ASSIGN TASK TAB ========== */}
+        {activeTab === 'Assign Task' && (
+          <div className="max-w-lg mx-auto">
+            <div className="bg-white p-6 rounded-xl shadow-sm border">
+              <h3 className="font-bold mb-4 text-lg">Create & Assign New Task</h3>
               <form onSubmit={handleCreateTask} className="space-y-4">
                 <div><label className="block text-sm mb-1">Title *</label><input name="title" required className="w-full border p-2 rounded text-sm" /></div>
+                
                 <div>
-                  <label className="block text-sm mb-1">Assign To *</label>
-                  <select name="intern_id" required className="w-full border p-2 rounded text-sm">
-                    <option value="">Select Intern...</option>
-                    {activeInterns.map(i => <option key={i.id} value={i.id}>{i.name} ({i.intern_id})</option>)}
-                  </select>
+                  <label className="block text-sm mb-2 font-medium">Assign To</label>
+                  <div className="flex gap-4 mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="assign_mode" checked={assignMode === 'individual'} onChange={() => setAssignMode('individual')} className="accent-blue-600" />
+                      <span className="text-sm">Individual Intern</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="assign_mode" checked={assignMode === 'team'} onChange={() => setAssignMode('team')} className="accent-blue-600" />
+                      <span className="text-sm">Team / Group</span>
+                    </label>
+                  </div>
+                  {assignMode === 'individual' ? (
+                    <select name="intern_id" required className="w-full border p-2 rounded text-sm">
+                      <option value="">Select Intern...</option>
+                      {activeInterns.map(i => <option key={i.id} value={i.id}>{i.name} ({i.intern_id})</option>)}
+                    </select>
+                  ) : (
+                    <select name="team_id" required className="w-full border p-2 rounded text-sm">
+                      <option value="">Select Team...</option>
+                      {teams.map(t => <option key={t.id} value={t.id}>{t.name} ({t.intern_team_members?.length || 0} members)</option>)}
+                    </select>
+                  )}
                 </div>
+
                 <div><label className="block text-sm mb-1">Deadline</label><input type="datetime-local" name="deadline" className="w-full border p-2 rounded text-sm" /></div>
                 <div><label className="block text-sm mb-1">Resource / Document URL</label><input name="document_url" type="url" className="w-full border p-2 rounded text-sm" /></div>
                 <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="3" className="w-full border p-2 rounded text-sm"></textarea></div>
-                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium">Assign Task</button>
+                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">Assign Task</button>
               </form>
-            </div>
-            <div className="md:col-span-2 space-y-4">
-              {tasks.map(t => (
-                <div key={t.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                  <div className="flex justify-between">
-                    <h4 className="font-bold text-gray-900">{t.title}</h4>
-                    <span className="text-sm text-gray-500">Deadline: {t.deadline ? new Date(t.deadline).toLocaleString() : 'No deadline'}</span>
-                  </div>
-                  {t.interns && <p className="text-xs mt-1"><span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">Assigned: {t.interns.name} ({t.interns.intern_id})</span></p>}
-                  <p className="text-sm text-gray-600 mt-2">{t.description}</p>
-                  {t.document_url && <a href={t.document_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline mt-2 inline-block">View Resource Document</a>}
-                </div>
-              ))}
             </div>
           </div>
         )}
 
+        {/* ========== ASSIGNED TASKS TAB ========== */}
+        {activeTab === 'Assigned Tasks' && (
+          <div className="space-y-4">
+            {tasks.length === 0 && <p className="text-center text-gray-500 bg-white p-8 rounded-xl border">No tasks assigned yet.</p>}
+            {tasks.map(t => (
+              <div key={t.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h4 className="font-bold text-gray-900 text-lg">{t.title}</h4>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {t.interns && <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-xs font-medium">Intern: {t.interns.name} ({t.interns.intern_id})</span>}
+                      {t.intern_teams && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs font-medium">Team: {t.intern_teams.name}</span>}
+                      <span className="text-xs text-gray-500 self-center">Deadline: {t.deadline ? new Date(t.deadline).toLocaleString() : 'No deadline'}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 ml-4 shrink-0">
+                    <button onClick={() => setEditingTask(t)} className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded font-medium hover:bg-blue-100">Edit</button>
+                    <button onClick={() => handleDeleteTask(t.id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded font-medium hover:bg-red-100">Delete</button>
+                  </div>
+                </div>
+                {t.description && <p className="text-sm text-gray-600 mt-3">{t.description}</p>}
+                {t.document_url && <a href={t.document_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline mt-2 inline-block">View Resource Document</a>}
+              </div>
+            ))}
+
+            {/* Edit Task Modal */}
+            {editingTask && (
+              <Modal isOpen={true} onClose={() => setEditingTask(null)} title="Edit Task" maxWidth="max-w-lg">
+                <form onSubmit={handleEditTask} className="space-y-4">
+                  <div><label className="block text-sm mb-1">Title *</label><input name="title" required defaultValue={editingTask.title} className="w-full border p-2 rounded text-sm" /></div>
+                  <div><label className="block text-sm mb-1">Deadline</label><input type="datetime-local" name="deadline" defaultValue={editingTask.deadline ? editingTask.deadline.slice(0,16) : ''} className="w-full border p-2 rounded text-sm" /></div>
+                  <div><label className="block text-sm mb-1">Resource URL</label><input name="document_url" type="url" defaultValue={editingTask.document_url} className="w-full border p-2 rounded text-sm" /></div>
+                  <div><label className="block text-sm mb-1">Description</label><textarea name="description" rows="3" defaultValue={editingTask.description} className="w-full border p-2 rounded text-sm"></textarea></div>
+                  <div className="flex justify-end gap-3">
+                    <button type="button" onClick={() => setEditingTask(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium text-sm">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded font-medium text-sm hover:bg-blue-700">Save Changes</button>
+                  </div>
+                </form>
+              </Modal>
+            )}
+          </div>
+        )}
+
+        {/* ========== SUBMISSIONS TAB ========== */}
         {activeTab === 'Submissions' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <table className="w-full text-left">
@@ -3912,6 +3964,51 @@ const InternTasksAdmin = () => {
           </div>
         )}
 
+        {/* ========== TEAMS TAB ========== */}
+        {activeTab === 'Teams' && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-1 bg-white p-5 rounded-xl shadow-sm border h-fit">
+              <h3 className="font-bold mb-4">Create Team</h3>
+              <form onSubmit={handleCreateTeam} className="space-y-4">
+                <div><label className="block text-sm mb-1">Team Name *</label><input name="team_name" required className="w-full border p-2 rounded text-sm" placeholder="e.g. Frontend Dev" /></div>
+                <div>
+                  <label className="block text-sm mb-2">Select Members (min 2) *</label>
+                  <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
+                    {activeInterns.map(i => (
+                      <label key={i.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded cursor-pointer">
+                        <input type="checkbox" name="member_ids" value={i.id} className="accent-blue-600" />
+                        <span className="text-sm">{i.name}</span>
+                        <span className="text-xs text-gray-400 ml-auto">{i.intern_id}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <button type="submit" className="w-full py-2 bg-emerald-600 text-white rounded text-sm font-medium hover:bg-emerald-700">Create Team</button>
+              </form>
+            </div>
+            <div className="md:col-span-2 space-y-4">
+              {teams.length === 0 && <p className="text-center text-gray-500 bg-white p-8 rounded-xl border">No teams created yet.</p>}
+              {teams.map(t => (
+                <div key={t.id} className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                      <Users size={18} className="text-emerald-600" /> {t.name}
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">{t.intern_team_members?.length || 0} members</span>
+                    </h4>
+                    <button onClick={() => handleDeleteTeam(t.id)} className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded font-medium hover:bg-red-100">Delete Team</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {t.intern_team_members?.map(m => (
+                      <span key={m.id} className="bg-gray-100 px-3 py-1 rounded-full text-sm font-medium text-gray-700">{m.interns?.name} <span className="text-gray-400 text-xs">{m.interns?.intern_id}</span></span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========== ANNOUNCEMENTS TAB ========== */}
         {activeTab === 'Announcements' && (
           <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-1 bg-white p-4 rounded-xl shadow-sm border h-fit">
@@ -3963,8 +4060,18 @@ const InternPortal = ({ internSession, setInternSession }) => {
     const { data: iData } = await supabase.from('interns').select('*').eq('id', internSession.id).single();
     if (iData) setInternDetails(iData);
 
-    const { data: tData } = await supabase.from('intern_tasks').select('*').eq('intern_id', internSession.id).order('deadline', { ascending: true });
-    setTasks(tData || []);
+    const { data: tData } = await supabase.from('intern_tasks').select('*, intern_teams(name)').eq('intern_id', internSession.id).order('deadline', { ascending: true });
+    // Fetch teams this intern belongs to
+    const { data: myTeams } = await supabase.from('intern_team_members').select('team_id, intern_teams(name)').eq('intern_id', internSession.id);
+    const teamIds = myTeams?.map(t => t.team_id) || [];
+    let teamTasks = [];
+    if (teamIds.length > 0) {
+      const { data: tTasks } = await supabase.from('intern_tasks').select('*, intern_teams(name)').in('team_id', teamIds).order('deadline', { ascending: true });
+      teamTasks = (tTasks || []).map(t => ({ ...t, _isTeamTask: true, _teamName: t.intern_teams?.name }));
+    }
+    const allTasks = [...(tData || []), ...teamTasks];
+    const uniqueTasks = allTasks.filter((t, i, arr) => arr.findIndex(x => x.id === t.id) === i);
+    setTasks(uniqueTasks);
     
     const { data: aData } = await supabase.from('intern_announcements').select('*').order('created_at', { ascending: false });
     setAnnouncements(aData || []);
@@ -4086,7 +4193,10 @@ const InternPortal = ({ internSession, setInternSession }) => {
                 return (
                   <div key={t.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-bold text-lg text-gray-900">{t.title}</h3>
+                      <div>
+                        <h3 className="font-bold text-lg text-gray-900">{t.title}</h3>
+                        {t._isTeamTask && <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-xs font-medium mt-1 inline-block">Team: {t._teamName}</span>}
+                      </div>
                       {sub ? (
                         <span className={`px-2 py-1 text-xs font-medium rounded ${sub.status === 'Reviewed' ? 'bg-green-100 text-green-700' : sub.status === 'Needs Revision' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                           {sub.status}
@@ -4936,6 +5046,7 @@ export default function SkynovaCRM() {
     </div>
   );
 }
+
 
 
 
