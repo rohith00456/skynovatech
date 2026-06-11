@@ -1501,7 +1501,7 @@ const Stipends = () => {
 
   const fetchStipends = async () => {
     setLoading(true);
-    let query = supabase.from('stipends').select('*, users(name), interns(name)');
+    let query = supabase.from('stipends').select('*, interns(name)');
     
     if (filters.project_name) query = query.ilike('project_name', `%${filters.project_name}%`);
     if (filters.status.length) query = query.in('status', filters.status);
@@ -1545,7 +1545,7 @@ const Stipends = () => {
   };
 
   const exportCSV = () => {
-    const csvData = stipends.map(s => [s.id, s.users?.name || s.interns?.name || 'Unknown', s.project_name, s.amount, s.status, s.stipend_date].join(','));
+    const csvData = stipends.map(s => [s.id, s.interns?.name || 'Unknown', s.project_name, s.amount, s.status, s.stipend_date].join(','));
     const csvContent = "ID,Name,Project,Amount,Status,Date\n" + csvData.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -1633,7 +1633,10 @@ const Stipends = () => {
                       setSelectedStipends(newSet);
                     }} />
                   </td>
-                  <td className="p-4 font-medium">{stip.users?.name || 'Unknown'}</td>
+                  <td className="p-4">
+                    <div className="font-medium text-gray-800">{stip.interns?.name || 'Unknown'}</div>
+                    <div className="text-sm text-gray-500">{stip.role || (stip.intern_id ? 'Intern' : '')}</div>
+                  </td>
                   <td className="p-4 text-sm text-gray-600">{stip.role} <br/> {stip.department}</td>
                   <td className="p-4 text-gray-600">{stip.project_name}</td>
                   <td className="p-4 text-right font-semibold">₹{Number(stip.amount).toLocaleString()}</td>
