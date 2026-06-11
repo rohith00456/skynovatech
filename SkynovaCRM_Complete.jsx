@@ -1148,7 +1148,7 @@ const SalesPipeline = () => {
           <Plus size={16} /> Add Deal
         </button>
       </div>
-      <div className="flex-1 flex gap-4 overflow-x-auto pb-4">
+      <div className="flex-1 flex gap-4 overflow-x-scroll pb-4 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
         {loading ? <div className="m-auto"><Spinner /></div> : stages.map(stage => (
           <div key={stage} className="w-80 shrink-0 bg-gray-50 rounded-xl flex flex-col h-full border">
             <div className="p-3 border-b flex justify-between items-center bg-gray-100 rounded-t-xl">
