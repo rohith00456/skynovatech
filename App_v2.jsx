@@ -1151,21 +1151,27 @@ const SalesPipeline = () => {
 
   return (
     <div className="p-6 h-full flex flex-col overflow-hidden">
+      <style>{`
+        .custom-scroll::-webkit-scrollbar { height: 24px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 12px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 12px; border: 4px solid #f1f5f9; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      `}</style>
       <div className="flex justify-between items-center mb-6 shrink-0">
-        <h2 className="text-2xl font-bold text-red-600">Sales Pipeline TEST TEST</h2>
-        <div className="flex gap-2">
-          <button onClick={scrollLeft} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
-            <ChevronLeft size={20} />
+        <h2 className="text-2xl font-bold">Sales Pipeline</h2>
+        <div className="flex gap-4">
+          <button onClick={scrollLeft} className="px-6 py-3 bg-blue-100 text-blue-700 font-bold rounded-lg shadow hover:bg-blue-200 flex items-center gap-2">
+            <ChevronLeft size={24} /> SCROLL LEFT
           </button>
-          <button onClick={scrollRight} className="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200">
-            <ChevronRight size={20} />
+          <button onClick={scrollRight} className="px-6 py-3 bg-blue-100 text-blue-700 font-bold rounded-lg shadow hover:bg-blue-200 flex items-center gap-2">
+            SCROLL RIGHT <ChevronRight size={24} />
           </button>
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 ml-2">
-            <Plus size={16} /> Add Deal
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-700 ml-4">
+            <Plus size={20} /> ADD NEW DEAL
           </button>
         </div>
       </div>
-      <div ref={scrollRef} className="flex-1 flex gap-4 overflow-x-scroll pb-4 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div ref={scrollRef} className="custom-scroll flex-1 flex gap-4 overflow-x-auto pb-6 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
         {loading ? <div className="m-auto"><Spinner /></div> : stages.map(stage => (
           <div key={stage} className="w-80 shrink-0 bg-gray-50 rounded-xl flex flex-col h-full border">
             <div className="p-3 border-b flex justify-between items-center bg-gray-100 rounded-t-xl">
