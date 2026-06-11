@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skynova CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18",
+        "react-dom": "https://esm.sh/react-dom@18",
+        "react-dom/client": "https://esm.sh/react-dom@18/client",
+        "recharts": "https://esm.sh/recharts?external=react,react-dom",
+        "lucide-react": "https://esm.sh/lucide-react?external=react",
+        "https://esm.sh/@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js"
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root">
+    <div style="display: flex; height: 100vh; align-items: center; justify-content: center; font-family: sans-serif; background: #f1f5f9;">
+       <div style="text-align: center;">
+         <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Loading Skynova CRM...</h1>
+         <p style="color: #64748b;">Compiling React application in the browser.</p>
+       </div>
+    </div>
+  </div>
+  
+  <script>
+    // Catch global errors and display them
+    window.addEventListener('error', function(e) {
+      document.getElementById('root').innerHTML = '<div style="color:red; padding: 20px; font-family: monospace;">Global Error: ' + e.message + '</div>';
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      document.getElementById('root').innerHTML = '<div style="color:red; padding: 20px; font-family: monospace;">Unhandled Promise Rejection: ' + e.reason + '</div>';
+    });
+
+    async function init() {
+      try {
+        // Fetch the raw JSX file
+        const response = await fetch('./App_v2.jsx?v=' + Date.now());
+        if (!response.ok) throw new Error('Failed to load JSX file');
+        let code = await response.text();
+
+        // Convert the default export to a regular function so we can mount it
+        code = code.replace(/export default function SkynovaCRM/g, 'function SkynovaCRM');
+
+        // Append the rendering logic
+        code += `
+import { createRoot } from 'react-dom/client';
+const root = createRoot(document.getElementById('root'));
+root.render(React.createElement(SkynovaCRM));
+`;
+
+        // Compile JSX using Babel Standalone
+        const compiled = Babel.transform(code, {
+          presets: ['react']
+        }).code;
+
+        // Inject the compiled code as an ES Module
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.textContent = compiled;
+        document.body.appendChild(script);
+
+      } catch (err) {
+        document.getElementById('root').innerHTML = '<div style="color:red; padding: 20px;">Failed to load the app: ' + err.message + '</div>';
+        console.error(err);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
