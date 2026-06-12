@@ -2017,23 +2017,74 @@ const Reports = () => {
 // 11. Activity Log
 const ActivityLog = () => {
   const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchActivities = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('activities').select('*, users(name)').order('created_at', { ascending: false }).limit(100);
+    setActivities(data || []);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    supabase.from('activities').select('*, users(name)').order('created_at', { ascending: false }).limit(100)
-      .then(({data}) => setActivities(data || []));
+    fetchActivities();
   }, []);
+
   return (
-    <div className="p-6 h-full">
-      <h2 className="text-2xl font-bold mb-6">Activity Log</h2>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 space-y-4">
-        {activities.map(a => (
-          <div key={a.id} className="flex gap-4 p-3 hover:bg-gray-50 rounded-lg">
-            <div className="mt-1"><Activity className="text-blue-500" size={18}/></div>
-            <div>
-              <p className="text-sm"><span className="font-medium">{a.users?.name || 'System'}</span> {a.action} <span className="font-medium">{a.record_name}</span> in module <span className="font-medium capitalize">{a.module}</span></p>
-              <p className="text-xs text-gray-500">{new Date(a.created_at).toLocaleString()}</p>
-            </div>
+    <div className="p-6 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Activity Log</h2>
+        <button onClick={fetchActivities} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-md hover:bg-gray-50 transition-colors shadow-sm">
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> Refresh
+        </button>
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 p-6 overflow-y-auto relative custom-scrollbar">
+        {loading ? (
+          <div className="flex justify-center items-center h-40">
+            <Spinner />
           </div>
-        ))}
+        ) : activities.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-center animate-fade-in">
+            <div className="bg-blue-50 p-4 rounded-full mb-4">
+              <Activity className="text-blue-500" size={32} />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">No activities found</h3>
+            <p className="text-gray-500 max-w-sm">Activity logs will appear here when users interact with the system modules.</p>
+          </div>
+        ) : (
+          <div className="relative border-l-2 border-blue-100 ml-3 md:ml-4 space-y-8 pb-4">
+            {activities.map((a, idx) => (
+              <div key={a.id} className="relative pl-8 group animate-fade-in" style={{ animationDelay: `${idx * 50}ms` }}>
+                {/* Timeline Dot */}
+                <div className="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-blue-500 border-4 border-white shadow-sm group-hover:scale-125 transition-transform duration-200"></div>
+                
+                {/* Content Card */}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-100 shadow-sm hover:shadow-md hover:bg-white transition-all duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-blue-100 p-1.5 rounded-md text-blue-700">
+                        <Activity size={16} />
+                      </div>
+                      <span className="font-semibold text-gray-900">{a.users?.name || 'System'}</span>
+                      <span className="text-gray-500 text-sm hidden sm:inline">{a.action}</span>
+                    </div>
+                    <span className="text-xs font-medium text-gray-500 bg-white px-2 py-1 rounded-md border border-gray-100 shadow-sm whitespace-nowrap">
+                      {new Date(a.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                    </span>
+                  </div>
+                  
+                  <div className="sm:pl-9">
+                    <p className="text-gray-700 text-sm">
+                      <span className="sm:hidden">{a.action} </span>
+                      <span className="font-medium text-gray-900">{a.record_name}</span> in module <span className="font-medium capitalize text-blue-600 bg-blue-50 px-2 py-0.5 rounded text-xs">{a.module}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
