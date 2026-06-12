@@ -1529,8 +1529,9 @@ const AddQuoteModal = ({ onClose }) => {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    const { tax_percentage, ...formFields } = form;
     const payload = {
-      ...form,
+      ...formFields,
       items: items,
       subtotal,
       tax: tax_amount,
