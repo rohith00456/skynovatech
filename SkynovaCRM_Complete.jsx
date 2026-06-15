@@ -4915,7 +4915,7 @@ export default function SkynovaCRM() {
   const checkAdmin = async (session) => {
     if (session) {
       const email = session.user?.email?.toLowerCase().trim();
-      const authorizedEmails = ['rohithmech2006@gmail.com', 'nirmalraj9607@gmail.com', 'skynovatechsolutions@gmail.com'];
+      const authorizedEmails = ['rohithmech2006@gmail.com'];
       if (!authorizedEmails.includes(email)) {
         alert('Access Denied: Your email (' + email + ') is not authorized. Only admins can log in.');
         await supabase.auth.signOut();
