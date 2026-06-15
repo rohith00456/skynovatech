@@ -1,4 +1,4 @@
-$path = "E:\intern\skynovatech\SkynovaCRM_Complete.jsx"
+$path = "E:\intern\rizer\RizerCRM_Complete.jsx"
 $content = Get-Content $path -Raw
 
 $loginBlockNew = @"
@@ -40,7 +40,7 @@ $loginBlockNew = @"
           <div className="flex justify-center mb-6">
             <Activity size={48} className="text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold mb-6">Skynova CRM</h1>
+          <h1 className="text-2xl font-bold mb-6">Rizer CRM</h1>
           
           <div className="flex border-b mb-6">
             <button onClick={() => setRoute('admin_login')} className={`flex-1 pb-2 font-medium ${currentRoute !== 'intern_login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Admin Login</button>

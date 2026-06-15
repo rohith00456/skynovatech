@@ -12,7 +12,7 @@ def replace_in_file(filepath, old_text, new_text):
     else:
         print("Error: Target text not found")
 
-filepath = r"E:\intern\skynovatech\SkynovaCRM_Complete.jsx"
+filepath = r"E:\intern\rizer\RizerCRM_Complete.jsx"
 
 login_old = """  if (!session) {
     return (
@@ -22,7 +22,7 @@ login_old = """  if (!session) {
           <div className="flex justify-center mb-6">
             <Activity size={48} className="text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Skynova CRM</h1>
+          <h1 className="text-2xl font-bold mb-2">Rizer CRM</h1>
           <p className="text-gray-500 text-sm mb-8">Admin Access Only</p>
           <button 
             onClick={() => supabase.auth.signInWithOAuth({ 
@@ -79,7 +79,7 @@ login_new = """  const handleInternLogin = async (e) => {
           <div className="flex justify-center mb-6">
             <Activity size={48} className="text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold mb-6">Skynova CRM</h1>
+          <h1 className="text-2xl font-bold mb-6">Rizer CRM</h1>
           
           <div className="flex border-b mb-6">
             <button onClick={() => setRoute('admin_login')} className={`flex-1 pb-2 font-medium ${currentRoute !== 'intern_login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Admin Login</button>

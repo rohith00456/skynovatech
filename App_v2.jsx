@@ -282,7 +282,7 @@ export const showToast = (message, type = 'success') => {
     const id = toastCount;
     // We hack a bit to notify without context if called outside component
     // In a real app we'd use a robust toast library
-    const event = new CustomEvent('skynova-toast', { detail: { id, message, type } });
+    const event = new CustomEvent('rizer-toast', { detail: { id, message, type } });
     window.dispatchEvent(event);
 };
 
@@ -330,8 +330,8 @@ const ToastContainer = () => {
         setToasts(prev => prev.filter(t => t.id !== id));
       }, 3000);
     };
-    window.addEventListener('skynova-toast', handleToast);
-    return () => window.removeEventListener('skynova-toast', handleToast);
+    window.addEventListener('rizer-toast', handleToast);
+    return () => window.removeEventListener('rizer-toast', handleToast);
   }, []);
 
   return (
@@ -443,7 +443,7 @@ const Sidebar = ({ currentRoute, setRoute }) => {
     <div className="w-64 bg-[#1e2a3a] text-white flex flex-col h-screen fixed left-0 top-0 overflow-y-auto">
       <div className="p-6">
         <h1 className="text-2xl font-bold flex items-center gap-2 text-blue-400">
-          <Activity size={28} /> Skynova
+          <Activity size={28} /> Rizer
         </h1>
         <p className="text-gray-400 text-sm mt-1">CRM Solutions</p>
       </div>
@@ -833,9 +833,9 @@ const Leads = () => {
                     <button onClick={() => { setSelectedLeadForDeal(lead); setDealModalOpen(true); }} title="Add to Sales Pipeline" className="text-gray-400 hover:text-yellow-600"><Briefcase size={16} /></button>
                     <button onClick={() => handleConvertToCustomer(lead)} title="Convert to Customer" className="text-gray-400 hover:text-indigo-600"><UserPlus size={16} /></button>
                     <button onClick={() => {
-                      const url = `https://wa.me/91${lead.phone}?text=Hi%20${encodeURIComponent(lead.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
+                      const url = `https://wa.me/91${lead.phone}?text=Hi%20${encodeURIComponent(lead.name)}%2C%20this%20is%20the%20team%20at%20Rizer.`;
                       window.open(url, '_blank');
-                      logActivity(null, 'WhatsApp message sent', 'whatsapp', lead.id, lead.name, null, 'Hi ' + lead.name + ', this is the team at SkynovaTech.');
+                      logActivity(null, 'WhatsApp message sent', 'whatsapp', lead.id, lead.name, null, 'Hi ' + lead.name + ', this is the team at Rizer.');
                     }} className="text-gray-400 hover:text-green-600"><Phone size={16} /></button>
                     <button className="text-gray-400 hover:text-blue-600"><Edit size={16} /></button>
                     <button onClick={() => deleteLead(lead.id, lead.name)} className="text-gray-400 hover:text-red-600"><Trash size={16} /></button>
@@ -946,9 +946,9 @@ const Customers = () => {
               <div className="flex gap-2">
                 <button onClick={(e) => {
                   e.stopPropagation();
-                  const url = `https://wa.me/91${c.phone}?text=Hi%20${encodeURIComponent(c.name)}%2C%20this%20is%20the%20team%20at%20SkynovaTech.`;
+                  const url = `https://wa.me/91${c.phone}?text=Hi%20${encodeURIComponent(c.name)}%2C%20this%20is%20the%20team%20at%20Rizer.`;
                   window.open(url, '_blank');
-                  logActivity(null, 'WhatsApp message sent', 'whatsapp', c.id, c.name, null, 'Hi ' + c.name + ', this is the team at SkynovaTech.');
+                  logActivity(null, 'WhatsApp message sent', 'whatsapp', c.id, c.name, null, 'Hi ' + c.name + ', this is the team at Rizer.');
                 }} className="text-gray-400 hover:text-green-600"><Phone size={16} /></button>
                 <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">{c.status || 'Active'}</span>
               </div>
@@ -2074,12 +2074,12 @@ const Invoices = () => {
     const doc = new jsPDF();
     doc.setFontSize(24);
     doc.setTextColor(24, 119, 242);
-    doc.text("Skynova Tech Solutions", 20, 20);
+    doc.text("Rizer Tech Solutions", 20, 20);
     
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text("123 Tech Park, Innovation City, 500001", 20, 28);
-    doc.text("Email: contact@skynovatech.com | Phone: +91 9876543210", 20, 34);
+    doc.text("Email: contact@rizer.com | Phone: +91 9876543210", 20, 34);
 
     doc.setFontSize(20);
     doc.setTextColor(0);
@@ -2225,7 +2225,7 @@ const InvoiceBuilderModal = ({ onClose }) => {
   const [items, setItems] = useState([{ id: 1, service_name: '', description: '', qty: 1, unit_price: 0 }]);
   
   // Preferences
-  const pref = JSON.parse(localStorage.getItem('skynova_company_settings') || '{}');
+  const pref = JSON.parse(localStorage.getItem('rizer_company_settings') || '{}');
   const taxPercent = pref.defaultGst || 18;
   const prefix = pref.invoicePrefix || 'INV';
   const generatedInvoiceNumber = `${prefix}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2660,7 +2660,7 @@ const WhatsAppCenter = () => {
   }, [selectedContact]);
 
   const templates = {
-    'Initial Follow-up': "Hi {name}, this is the team at SkynovaTech. Thank you for your interest! We'd love to understand your requirements. When would be a good time to connect?",
+    'Initial Follow-up': "Hi {name}, this is the team at Rizer. Thank you for your interest! We'd love to understand your requirements. When would be a good time to connect?",
     'Proposal Follow-up': "Hi {name}, wanted to follow up on our recent proposal. Please let us know if you have any questions or need any changes. We're happy to help!",
     'Payment Reminder': "Hi {name}, this is a gentle reminder regarding your pending payment. Kindly arrange the payment at your earliest convenience. Thank you!",
     'Project Update': "Hi {name}, a quick update on your project — things are progressing well. We'll keep you posted on the next milestone. Thank you for your trust!",
@@ -2970,8 +2970,8 @@ const TeamManagement = () => {
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('Company');
-  const [companySettings, setCompanySettings] = useState(() => JSON.parse(localStorage.getItem('skynova_company_settings') || '{}'));
-  const [preferences, setPreferences] = useState(() => JSON.parse(localStorage.getItem('skynova_company_settings') || '{}'));
+  const [companySettings, setCompanySettings] = useState(() => JSON.parse(localStorage.getItem('rizer_company_settings') || '{}'));
+  const [preferences, setPreferences] = useState(() => JSON.parse(localStorage.getItem('rizer_company_settings') || '{}'));
   
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(false);
@@ -3002,7 +3002,7 @@ const SettingsPage = () => {
       gstNumber: fd.get('gstNumber'),
       website: fd.get('website')
     };
-    localStorage.setItem('skynova_company_settings', JSON.stringify(settings));
+    localStorage.setItem('rizer_company_settings', JSON.stringify(settings));
     setCompanySettings(settings);
     showToast('Company Settings saved');
   };
@@ -3016,7 +3016,7 @@ const SettingsPage = () => {
       invoicePrefix: fd.get('invoicePrefix'),
       paymentTerms: fd.get('paymentTerms')
     };
-    localStorage.setItem('skynova_company_settings', JSON.stringify(prefs));
+    localStorage.setItem('rizer_company_settings', JSON.stringify(prefs));
     setPreferences(prefs);
     showToast('Preferences saved');
   };
@@ -3995,7 +3995,7 @@ const WebsiteForms = () => {
     const doc = new jsPDF();
     doc.setFontSize(22);
     doc.setTextColor(24, 119, 242);
-    doc.text(`Skynova Tech Solutions`, 105, 20, null, null, "center");
+    doc.text(`Rizer Tech Solutions`, 105, 20, null, null, "center");
     
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
@@ -4307,7 +4307,7 @@ const MailSender = () => {
     <div className="p-6 h-full flex flex-col bg-gray-50 items-center overflow-y-auto">
       <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 max-w-3xl w-full mt-6">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-blue-600 mb-1">Skynova Tech Solutions</h2>
+          <h2 className="text-2xl font-bold text-blue-600 mb-1">Rizer Tech Solutions</h2>
           <h3 className="text-xl font-semibold text-gray-800">Mail Sender</h3>
         </div>
 
@@ -4381,7 +4381,7 @@ const MailSender = () => {
 };
 
 // --- APP COMPONENT ---
-export default function SkynovaCRM() {
+export default function RizerCRM() {
   const [currentRoute, setRoute] = useState('dashboard');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -4525,7 +4525,7 @@ export default function SkynovaCRM() {
           <div className="flex justify-center mb-6">
             <Activity size={48} className="text-blue-600" />
           </div>
-          <h1 className="text-2xl font-bold mb-6">Skynova CRM</h1>
+          <h1 className="text-2xl font-bold mb-6">Rizer CRM</h1>
           
           <div className="flex border-b mb-6">
             <button onClick={() => setRoute('admin_login')} className={`flex-1 pb-2 font-medium ${currentRoute !== 'intern_login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500'}`}>Admin Login</button>

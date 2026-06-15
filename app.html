@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Skynova CRM</title>
+  <title>Rizer CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="importmap">
     {
@@ -23,7 +23,7 @@
   <div id="root">
     <div style="display: flex; height: 100vh; align-items: center; justify-content: center; font-family: sans-serif; background: #f1f5f9;">
        <div style="text-align: center;">
-         <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Loading Skynova CRM...</h1>
+         <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 8px;">Loading Rizer CRM...</h1>
          <p style="color: #64748b;">Compiling React application in the browser.</p>
        </div>
     </div>
@@ -46,13 +46,13 @@
         let code = await response.text();
 
         // Convert the default export to a regular function so we can mount it
-        code = code.replace(/export default function SkynovaCRM/g, 'function SkynovaCRM');
+        code = code.replace(/export default function RizerCRM/g, 'function RizerCRM');
 
         // Append the rendering logic
         code += `
 import { createRoot } from 'react-dom/client';
 const root = createRoot(document.getElementById('root'));
-root.render(React.createElement(SkynovaCRM));
+root.render(React.createElement(RizerCRM));
 `;
 
         // Compile JSX using Babel Standalone

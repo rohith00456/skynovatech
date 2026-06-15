@@ -1,4 +1,4 @@
-$path = "E:\intern\skynovatech\SkynovaCRM_Complete.jsx"
+$path = "E:\intern\rizer\RizerCRM_Complete.jsx"
 $content = Get-Content $path -Raw
 
 # 1. SQL TABLES
@@ -7,8 +7,8 @@ $sqlNew = "  converted_lead_id uuid references leads(id),`n  created_at timestam
 $content = $content.Replace($sqlOld, $sqlNew)
 
 # 2. Inject React Modules before APP COMPONENT
-$internAdmin = Get-Content "E:\intern\skynovatech\intern_admin_modules.jsx" -Raw
-$internPortal = Get-Content "E:\intern\skynovatech\intern_portal_module.jsx" -Raw
+$internAdmin = Get-Content "E:\intern\rizer\intern_admin_modules.jsx" -Raw
+$internPortal = Get-Content "E:\intern\rizer\intern_portal_module.jsx" -Raw
 $modulesBlock = "`n" + $internAdmin + "`n" + $internPortal + "`n// --- APP COMPONENT ---"
 $content = $content.Replace("// --- APP COMPONENT ---", $modulesBlock)
 
